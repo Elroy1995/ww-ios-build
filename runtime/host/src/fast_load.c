@@ -1,6 +1,7 @@
 #include "fast_load.h"
 
 #include "gxruntime/aurora_backend.h"
+#include "quick_doors.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -53,7 +54,9 @@ static unsigned g_fade_frames = 6;
 // no wall-clock pacing, and (dol_aurora_set_fast_forward) no presents and no
 // queued sound. It starts once the screen has been black for kSettle retraces
 // (the black frame is on the screen by then), stops when the picture starts
-// coming back, and never runs longer than kFastForwardMax retraces.
+// coming back, and never runs longer than kFastForwardMax retraces. With quick
+// doors (quick_doors.c), a knob door's own fade covering the screen on the way
+// to the scene change counts as black too.
 // BLUEWAKE_FAST_FORWARD=0 turns it off.
 static bool g_ff_enabled = true;
 static bool g_ff;
@@ -80,15 +83,20 @@ static unsigned long long now_us(clockid_t clock) {
     return (unsigned long long)ts.tv_sec * 1000000ull + (unsigned long long)ts.tv_nsec / 1000ull;
 }
 
-void bluewake_fast_load_attach(CPUState* cpu) {
-    g_cpu = cpu;
+void bluewake_fast_load_reload(void) {
     const char* fade = getenv("BLUEWAKE_FADE_FRAMES");
+    g_fade_frames = 6u;
     if (fade != NULL && fade[0] != '\0') {
         const long frames = strtol(fade, NULL, 10);
         g_fade_frames = frames <= 0 || frames >= kGameFade ? 0u : (unsigned)frames;
     }
     const char* ff = getenv("BLUEWAKE_FAST_FORWARD");
     g_ff_enabled = ff == NULL || ff[0] != '0';
+}
+
+void bluewake_fast_load_attach(CPUState* cpu) {
+    g_cpu = cpu;
+    bluewake_fast_load_reload();
     const char* trace = getenv("BLUEWAKE_LOAD_TRACE");
     g_trace = trace != NULL && trace[0] == '1';
     const char* warp = getenv("BLUEWAKE_TEST_WARP");
@@ -157,7 +165,9 @@ void bluewake_fast_load_retrace(unsigned long long cpu_us) {
         shorten_fade(cpu, overlap);
     const u32 fader = mem_read32(cpu, kFader);
     const int status = guest_pointer(fader) ? (int)mem_read32(cpu, fader + kFaderStatus) : -1;
-    const bool covered = guest_pointer(overlap) && status == kFaderCovered;
+    // Or a knob door's own fade covers it on the way to the scene change
+    // (quick_doors.c).
+    const bool covered = (guest_pointer(overlap) && status == kFaderCovered) || bluewake_quick_doors_covered();
     g_covered = covered ? g_covered + 1u : 0u;
     const bool ff = g_ff_enabled && g_covered >= kSettle && g_covered < kSettle + kFastForwardMax;
     if (ff != g_ff) {

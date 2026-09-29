@@ -1,5 +1,6 @@
 #include "mouse_camera.h"
 #include "jump_button.h"
+#include "settings_menu.h"
 
 #include "gxruntime/aurora_backend.h"
 
@@ -159,7 +160,13 @@ static void set_captured(bool captured) {
 static void observe(const void* sdl_event, void* user) {
     (void)user;
     const SDL_Event* event = (const SDL_Event*)sdl_event;
+    // The options menu first: it opens and closes on its keys, and while it
+    // is open it has the keyboard, mouse and controller to itself.
+    if (bluewake_settings_menu_event(sdl_event))
+        return;
     bluewake_jump_button_event(sdl_event);
+    if (!g_enabled)
+        return;
     switch (event->type) {
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
         if (event->button.button != SDL_BUTTON_LEFT)
@@ -206,13 +213,34 @@ void bluewake_mouse_camera_install(void) {
     // An iPad's touches arrive as mouse events too; its controls are on screen.
     return;
 #else
+    // Installed even with the mouse camera off: the options menu and the
+    // jump key read the same events.
     const char* on = getenv("BLUEWAKE_MOUSE_CAMERA");
-    if (on != NULL && on[0] == '0')
-        return;
-    g_enabled = true;
+    g_enabled = on == NULL || on[0] != '0';
     dol_aurora_set_event_observer(observe, NULL);
-    fprintf(stderr, "[mouse] click the game to turn the camera with the mouse\n");
+    if (g_enabled)
+        fprintf(stderr, "[mouse] click the game to turn the camera with the mouse\n");
 #endif
+}
+
+bool bluewake_mouse_camera_captured(void) { return g_captured; }
+
+void bluewake_mouse_camera_release(void) {
+    if (g_captured)
+        set_captured(false);
+}
+
+void bluewake_mouse_camera_reload(void) {
+#if !(defined(__APPLE__) && TARGET_OS_IPHONE)
+    const char* on = getenv("BLUEWAKE_MOUSE_CAMERA");
+    g_enabled = on == NULL || on[0] != '0';
+    if (!g_enabled)
+        bluewake_mouse_camera_release();
+#endif
+    const char* sensitivity = getenv("BLUEWAKE_MOUSE_SENSITIVITY");
+    g_sensitivity = sensitivity != NULL && atof(sensitivity) > 0.0 ? atof(sensitivity) : 1.0;
+    const char* invert = getenv("BLUEWAKE_MOUSE_INVERT_Y");
+    g_invert_y = invert != NULL && invert[0] == '1' ? -1.0 : 1.0;
 }
 
 void bluewake_mouse_camera_attach(CPUState* cpu) {

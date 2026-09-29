@@ -227,10 +227,14 @@ void bluewake_jump_button_event(const void* sdl_event) {
 #endif
 }
 
-void bluewake_jump_button_attach(CPUState* cpu) {
-    g_cpu = cpu;
+void bluewake_jump_button_reload(void) {
     const char* on = getenv("BLUEWAKE_JUMP_BUTTON");
     g_enabled = on == NULL || on[0] != '0';
+}
+
+void bluewake_jump_button_attach(CPUState* cpu) {
+    g_cpu = cpu;
+    bluewake_jump_button_reload();
     const char* trace = getenv("BLUEWAKE_JUMP_TRACE");
     g_trace = trace != NULL && trace[0] == '1';
     const char* test = getenv("BLUEWAKE_JUMP_TEST");

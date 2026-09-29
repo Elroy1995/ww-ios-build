@@ -27,6 +27,8 @@ void bluewake_jump_button_attach(CPUState* cpu);
 void bluewake_jump_button_event(const void* sdl_event);
 // Once per retrace.
 void bluewake_jump_button_retrace(void);
+// Reads BLUEWAKE_JUMP_BUTTON again (the options menu).
+void bluewake_jump_button_reload(void);
 
 // At every dispatch boundary (the chassis edge service). While a press waits,
 // Link's next proc call decides it: if it enters his standing, idling or

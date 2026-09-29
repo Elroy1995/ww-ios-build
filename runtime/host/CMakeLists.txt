@@ -32,8 +32,11 @@ add_executable(bluewake_host
     src/edge_intercepts.c
     src/game_options.c
     src/fast_load.c
+    src/fps_watch.c
     src/jump_button.c
+    src/settings_menu.cpp
     src/sprint.c
+    src/quick_doors.c
     src/mouse_camera.c
     src/return_census.c
     src/interrupt_sources.c
@@ -46,6 +49,10 @@ add_executable(bluewake_host
     src/rel_scratch_allocator.c
     src/scheduler_contract.c)
 target_link_libraries(bluewake_host PRIVATE gxruntime GXRuntime::aurora)
+# The options menu (settings_menu.cpp) draws with Aurora's Dear ImGui.
+if(TARGET imgui)
+    target_link_libraries(bluewake_host PRIVATE imgui)
+endif()
 set_target_properties(bluewake_host PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(bluewake_host PRIVATE
     ${GXRUNTIME_DIR}/include

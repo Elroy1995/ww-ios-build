@@ -21,8 +21,11 @@
 #include "edge_intercepts.h"
 #include "game_options.h"
 #include "fast_load.h"
+#include "fps_watch.h"
 #include "jump_button.h"
+#include "settings_menu.h"
 #include "sprint.h"
+#include "quick_doors.h"
 #include "mouse_camera.h"
 #include "callback_delivery.h"
 #include "cycle_domain.h"
@@ -1728,6 +1731,7 @@ static void host_actor_search_native(CPUState* cpu) {
 
 static bool host_chassis_edge_service(void* user, CPUState* cpu, u32 address) {
     bluewake_mouse_camera_dispatch(cpu, address);
+    bluewake_quick_doors_dispatch(cpu, address);
     if (bluewake_jump_button_dispatch(cpu, address))
         return true;
     if (__builtin_expect(cpu == NULL || g_turn_census_enabled ||
@@ -4708,7 +4712,9 @@ static void host_sync_vi_cycles(CPUState* cpu) {
         bluewake_mouse_camera_retrace();
         bluewake_jump_button_retrace();
         bluewake_sprint_retrace();
+        bluewake_fps_watch_retrace();
         bluewake_fast_load_retrace(bluewake_host_thread_cpu_us());
+        bluewake_quick_doors_retrace();
         if (g_wall_pace_enabled && !bluewake_fast_load_fast_forward())
             host_wall_pace(g_host_retrace_count);
         if (g_perf_log_enabled)
@@ -5649,6 +5655,8 @@ static void host_apply_aspect(void) {
 }
 
 int main(int argc, char** argv) {
+    // The options menu's saved choices, before anything reads the environment.
+    bluewake_settings_load();
     host_apply_aspect();
     const char* host_root = host_resolve_root();
     char dylib_scratch[4096 + 128];
@@ -5944,6 +5952,7 @@ int main(int argc, char** argv) {
             aurora_enabled = true;
             g_live_pad_enabled = true;
             bluewake_mouse_camera_install();
+            bluewake_settings_menu_install();
             fprintf(stderr, "[host] renderer=aurora window=%ux%u\n",
                     aurora_config.window_width, aurora_config.window_height);
         } else if (renderer_requested) {
@@ -6476,7 +6485,9 @@ int main(int argc, char** argv) {
     bluewake_mouse_camera_attach(&cpu);
     bluewake_jump_button_attach(&cpu);
     bluewake_sprint_attach(&cpu);
+    bluewake_fps_watch_attach(&cpu);
     bluewake_fast_load_attach(&cpu);
+    bluewake_quick_doors_attach(&cpu);
 
     unsigned long long blocks = 0;
     const char* stop_reason = NULL;
