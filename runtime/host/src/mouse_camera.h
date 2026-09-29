@@ -35,14 +35,16 @@ void bluewake_mouse_camera_retrace(void);
 // At every dispatch boundary (the chassis edge service): at camera_draw's
 // entry the frame's camera is final, and the mouse's view and zoom are
 // applied; at the player's update (daPy_Execute) the mouse's aim is.
-// It is called at every block boundary and acts at two addresses, so the test
-// is inline and the call only happens there (the call itself was about 2
-// percent of the game thread at 60 Hz).
-#define BLUEWAKE_MOUSE_CAMERA_DRAW_PC 0x8017C350u     // camera_draw__FP20camera_process_class
-#define BLUEWAKE_MOUSE_PLAYER_EXECUTE_PC 0x80122D30u  // daPy_Execute__FP9daPy_lk_c
+enum {
+    BLUEWAKE_CAMERA_DRAW = 0x8017C350u,
+    BLUEWAKE_PLAYER_EXECUTE = 0x80122D30u,
+};
 void bluewake_mouse_camera_enter(CPUState* cpu, u32 address);
+// Almost every block boundary is unrelated to the camera. Keep that case in
+// the caller, so it does not pay an out-of-line call and register saves.
 static inline void bluewake_mouse_camera_dispatch(CPUState* cpu, u32 address) {
-    if (__builtin_expect(address == BLUEWAKE_MOUSE_CAMERA_DRAW_PC || address == BLUEWAKE_MOUSE_PLAYER_EXECUTE_PC, 0))
+    if (__builtin_expect(address == BLUEWAKE_CAMERA_DRAW ||
+                         address == BLUEWAKE_PLAYER_EXECUTE, 0))
         bluewake_mouse_camera_enter(cpu, address);
 }
 // On every pad read, on channel 0's live state: left click is A.

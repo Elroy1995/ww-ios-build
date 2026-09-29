@@ -576,6 +576,10 @@ int main(int argc, char** argv) {
     bw_default("BLUEWAKE_CLOCK", "now");
     // The route digest's per-boundary observation: nothing to record in play.
     bw_default("BLUEWAKE_OVERLAP_OBSERVATION", "0");
+    // The certified native matrix leaves (cmake/composite/native_math.c): the
+    // Windows builder certifies them, and they fall back to the translated
+    // code for anything they do not reproduce exactly.
+    bw_default("BLUEWAKE_NATIVE_MATH", "1");
     bw_default_path("BLUEWAKE_SRAM", g_data_dir, "sram.bin");
     bw_default_path("BLUEWAKE_CARD_PATH", g_data_dir, "GZLE01.card");
     // The shader and pipeline caches with the rest of this data folder (for the

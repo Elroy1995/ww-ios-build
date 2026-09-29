@@ -5,10 +5,17 @@ Apple M3 Max. Reaching 60 real gameplay updates and renders per second needs
 substantial reductions in translated game work. Lowering resolution does not
 close the gap.
 
+The subsequent implementation and rendered comparisons are in
+[Native 60 Hz optimization implementation](NATIVE_60HZ_OPTIMIZATIONS_2026-09-29.md),
+including graphics caching/merging, GPU vertices, native arrays/workers and
+register-helper caller continuations. The original measurements below remain
+the baseline, not the final configuration.
+
 ## Measured performance
 
 Same private timing-patched module and Release host, from the isolated
-`true-60hz` worktree based on `2c9f16c`; RecompCore `b4af144`. Interpolation is
+`true-60hz` worktree based on `2c9f16c`; RecompCore `b4af144` plus the then-uncommitted
+presentation diagnostics (subsequently checkpointed as `fbb5943`). Interpolation is
 off, the experimental simulation mode is on, and saved settings are bypassed.
 The tests load a copy of the Outset card, stop scripted button presses, and
 leave Link stationary. Fortress uses the existing test warp at retrace 900:
@@ -203,3 +210,107 @@ analysis scripts. Native sample PIDs were checked against the actual game
 executable, not its launcher or `/usr/bin/time`. No optimization or gameplay
 source changes were made during this profiling pass, and no private build was
 published or committed.
+
+## Implementation checkpoint, later September 29
+
+The initial game/host changes are pushed at `8435ec7` on
+`elliotttate/Wind-Waker-Recomp:codex/native-60hz`. The separate shared Mac
+checkout was preserved and snapshotted at `78d389e` on
+`codex/mac-source-checkpoint-20260929`. The renderer's existing local changes
+were preserved at `fbb5943` in `elliotttate/RecompCore`, followed by `f7154b5`
+which serializes its texture-layout cache access across the pipeline compiler
+and FIFO worker. The builder now pins that reproducible source commit.
+
+The cache had a concrete concurrent read/insertion race in an
+`absl::flat_hash_map`. The fix also ties its entries to the owning GPU device.
+This removes that race; it does not prove that it was the cause of the earlier
+Fortress crash. Two short Fortress runs completed; longer stress testing is
+separate from performance acceptance.
+
+The mouse-camera adapter now checks its two entry addresses inline before
+making an out-of-line call. A new test-only input switch prevents physical
+controller or mouse activity from changing a rendered benchmark's camera or
+route. Earlier runs with different draw counts or a live-input takeover are
+excluded from optimization comparisons.
+
+Three native SDK matrix leaves are available behind `BLUEWAKE_NATIVE_MATH=1`
+and remain off by default. They validate bounded inputs and RAM ranges, retain
+paired-single rounding, full register results, reservations, stack stores and
+guest cycle charges, and use the original code near device deadlines or for
+unsupported inputs. Source-body certification covers all generated variants;
+CMake rejects stale certification. The test compared **12,000 full CPU states
+and RAM results** with an unoptimized personal module, including in-place
+products, signed zeros, retained NaN lanes and deadline boundaries.
+
+An isolated microbenchmark measured approximately 50/12 ns for matrix copy,
+173/22 ns for concatenation and 75/15 ns for vector transformation
+(original/native). These are kernel timings, not frame-rate results.
+
+| Paired live test | Native math off | Native math on | Interpretation |
+| --- | ---: | ---: | --- |
+| Outset, first implementation | 39.61 FPS | 38.76 FPS | No reliable frame-rate gain; total process instructions fell about 2.5%, CPU cycles were essentially unchanged. |
+| Fortress, revised RAM/validation path | 34.55 FPS | 35.88 FPS | Small measured improvement in this pair; total process instructions fell about 2.0%, cycles about 1.4%. Requires repetition. |
+
+Each pair used the same host/module, fixed test input and matching rendered
+draw counts. All 48 Outset player-state records and all 52 Fortress records
+matched within their respective pairs. The Fortress pair still reports 60
+physics/player updates per 60 retraces, while taking longer than one second
+of wall time to execute them. Desktop activity and thermal variation remain
+limitations of FPS comparisons. Whole-process counters include the graphics
+worker and startup, rather than isolating just the simulation window.
+
+The direct cycle-domain, simulation-timing and native-math tests pass, as do
+source-preparation drift/variant tests. CMake accepts the real native manifest
+and rejects a modified one. This local build configures `BUILD_TESTING=OFF`,
+so these results are from executing the test binaries directly, not CTest.
+Steady real-time 60 FPS and full-game timing compatibility remain unachieved.
+
+## Cached native dispatch follow-up
+
+The first native-math implementation checked its option and address range on
+every translated block. Native entries now resolve only on a miss in the
+existing program-counter cache. Ordinary cached blocks no longer pay that
+test, and native entries retain the translated fallback for unsupported input
+or nearby device deadlines. Configuration is fixed before the cache fills.
+The preparation manifest now includes the patched dispatch header.
+
+The actual rebuilt module passes 12,000 full CPU/RAM comparisons against the
+original module. Each of the three routines took 3,152 native paths and 848
+fallbacks in this run, including short deadlines, quantized loads, disabled
+FPU and NaNs. This supplements the direct helper test. CMake accepts the real
+dispatch header and rejects a changed header with stale certification.
+
+| Fixed-input Outset, headless, retraces 1800–2600 | Updates/sec | Mean / p95 interval | Whole-process instructions | Whole-process CPU cycles |
+| --- | ---: | ---: | ---: | ---: |
+| Native math disabled | 41.03 | 24.37 / 26.22 ms | 717.47 billion | 182.27 billion |
+| Cached native math enabled | 43.31 | 23.09 / 24.64 ms | 670.60 billion | 174.73 billion |
+| Cached native math plus private collision-block prototype | 42.16 | 23.72 / 25.54 ms | 666.50 billion | 177.09 billion |
+
+These sequential desktop runs used the same candidate module, fixed test
+input and no active profiler. Native math alone reduced total process
+instructions by about 6.5% and cycles by 4.1% in this pair; its measured
+throughput increased 5.6%. This is a promising local result, not a controlled
+thermal benchmark or rendered-game acceptance. The private prototype removed
+some precise-resumption branches while retaining deadline fallbacks. Although
+it passed 20,480 synthetic CPU/RAM comparisons, adding it did not improve
+this frame-rate comparison. It remains an unpublished experiment, disabled
+for the rendered native-math follow-up.
+
+The subsequent rendered Fortress pair measured **36.38 FPS disabled versus
+35.31 FPS enabled** (mean/p95: 27.49/29.08 ms versus 28.32/29.77 ms). All 52
+player-state records matched and both reported 14,369 draws in the measured
+view. Whole-process instructions fell from 1,558.41 to 1,527.81 billion, while
+cycles rose from 371.61 to 374.63 billion. Thus the headless improvement does
+**not** establish a reliable rendered Fortress speedup. Keep the optimization
+optional; it does not meet the 60 FPS target.
+
+The longer Fortress stability run completed 12,000 retraces (327 seconds)
+without the earlier graphics crash, using the cache-lock fix and native math.
+That is limited stability evidence, not proof of the crash's original cause
+or steady 60 FPS.
+
+[The Dusklight comparison](DUSKLIGHT_OPTIMIZATION_COMPARISON_2026-09-29.md)
+identifies native whole-routine execution, earlier dirty-state caching, adjacent
+draw merging and GPU vertex decoding as useful directions. Dusklight's own
+simulation remains 30 Hz with interpolated presentation; its higher rendered
+frame rate does not supply the missing gameplay timing conversion.

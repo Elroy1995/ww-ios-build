@@ -620,7 +620,9 @@ int main(void) {
         self.run("chunk-headers", [sys.executable, ROOT / "scripts/windows/chunk_headers.py", root])
         self.run("direct-calls", [sys.executable, ROOT / "scripts/windows/direct_calls.py", root])
         self.run("simulation-prepare", [sys.executable, ROOT / "scripts/mods/prepare_simulation_60hz.py", root])
-        for name in ("guest-cpu", "gpr-inline", "chunk-headers", "direct-calls", "simulation-prepare"):
+        # Last: its manifest hashes whole chunk files, as they end up.
+        self.run("native-math", [sys.executable, ROOT / "scripts/mods/prepare_native_math.py", root])
+        for name in ("guest-cpu", "gpr-inline", "chunk-headers", "direct-calls", "simulation-prepare", "native-math"):
             print((self.logs / f"{name}.log").read_text(errors="replace").strip().splitlines()[-1])
 
     def finish_in_place(self):

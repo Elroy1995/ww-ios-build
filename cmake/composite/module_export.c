@@ -4,6 +4,11 @@
 #include "generated_composite.h"
 #include "StaticRecompABI.h"
 #include "dispatch_loop.h"
+#include "native_math.h"
+#include <stdlib.h>
+#include <stdio.h>
+static int s_native_math;
+int bluewake_inline_gpr_enabled;
 #ifdef BLUEWAKE_SIMULATION_PATCHED
 #include "simulation_timing.h"
 #endif
@@ -16,6 +21,31 @@ unsigned dolrecomp_call_depth = 0;
 void (**const bw_chunk_fns)(CPUState*) = s_dolrecomp_chunk_fns;
 static BluewakeEdgeServiceFn s_edge_service;
 static void* s_edge_service_user;
+
+#ifdef BLUEWAKE_NATIVE_MATH_CACHED
+static void native_matrix_copy(CPUState* cpu) {
+    if (!bluewake_native_math(cpu, 0x8030D0C8u)) func_803096E0(cpu);
+}
+static void native_matrix_concat(CPUState* cpu) {
+    if (!bluewake_native_math(cpu, 0x8030D0FCu)) func_803096E0(cpu);
+}
+static void native_matrix_vec(CPUState* cpu) {
+    if (!bluewake_native_math(cpu, 0x8030DA44u)) func_8030D6E0(cpu);
+}
+static void native_matrix_array(CPUState* cpu) {
+    if (!bluewake_native_math(cpu, 0x8030DA98u)) func_8030D6E0(cpu);
+}
+static DolRecompFunction bluewake_native_math_find(u32 address) {
+    if (!s_native_math) return NULL;
+    switch (address) {
+    case 0x8030D0C8u: return native_matrix_copy;
+    case 0x8030D0FCu: return native_matrix_concat;
+    case 0x8030DA44u: return native_matrix_vec;
+    case 0x8030DA98u: return native_matrix_array;
+    default: return NULL;
+    }
+}
+#endif
 
 /* The x86-64-v3 dispatch clones come only from DolRecomp's LLVM object
  * backend; the C backend the Builder uses emits none, so an x86-64 build (the
@@ -52,6 +82,13 @@ static int host_has_x86_64_v3(void)
 
 static int selected_dispatch(CPUState* ctx, u32 address)
 {
+#ifndef BLUEWAKE_NATIVE_MATH_CACHED
+    // Compatibility with an older certified source folder. New preparation
+    // resolves these entries in the PC cache, avoiding a check at every block.
+    if (s_native_math && address >= 0x8030D0C8u && address <= 0x8030DA98u &&
+        bluewake_native_math(ctx, address))
+        return 1;
+#endif
 #if BLUEWAKE_X86_64_V3_DISPATCH
     if (host_has_x86_64_v3())
         return dolrecomp_call__x86_64_v3(ctx, address);
@@ -128,6 +165,29 @@ static const StaticRecompModuleDesc s_desc = {
 
 RECOMP_MODULE_EXPORT const StaticRecompModuleDesc* staticrecomp_get_module(void)
 {
+    static int configured;
+    if (!configured) {
+        configured = 1;
+        const char* native = getenv("BLUEWAKE_NATIVE_MATH");
+#ifdef BLUEWAKE_NATIVE_MATH_VERIFIED
+        s_native_math = native && strcmp(native, "1") == 0 &&
+            strcmp(MODULE_GAME_ID, "GZLE01") == 0;
+#else
+        s_native_math = 0;
+        if (native && strcmp(native, "1") == 0)
+            fprintf(stderr, "[native-math] unavailable: certify SDK sources before rebuilding\n");
+#endif
+#ifdef BLUEWAKE_NATIVE_GPR_VERIFIED
+        const char* gpr = getenv("BLUEWAKE_NATIVE_GPR");
+        bluewake_inline_gpr_enabled = gpr && strcmp(gpr,"1")==0 &&
+            strcmp(MODULE_GAME_ID,"GZLE01")==0 &&
+            !getenv("BLUEWAKE_BOUNDARY_CENSUS") && !getenv("BLUEWAKE_RETURN_CENSUS") &&
+            !getenv("BLUEWAKE_RETURN_CENSUS_EDGES") && !getenv("BLUEWAKE_CREDIT_CENSUS");
+#endif
+        if (s_native_math || bluewake_inline_gpr_enabled) atexit(bluewake_native_math_report);
+        if (s_native_math) fprintf(stderr, "[native-math] bounded GZLE01 matrix leaves enabled\n");
+        if (bluewake_inline_gpr_enabled) fprintf(stderr,"[native-gpr] certified caller continuations enabled\n");
+    }
     return &s_desc;
 }
 

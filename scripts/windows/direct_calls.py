@@ -42,6 +42,10 @@ CALL = re.compile(
 FUNCTION = re.compile(r"^(?:static )?void \w+\(CPUState\* ctx_param\) \{$", re.M)
 TABLE = re.compile(r"static DolRecompFunction s_dolrecomp_chunk_fns\[\] = \{(.*?)\};", re.S)
 DOL_CODE = (0x80003100, 0x80400000)
+# Entries the dispatcher answers with native code when BLUEWAKE_NATIVE_MATH is
+# on (cmake/composite/native_math.c: PSMTXCopy, PSMTXConcat, PSMTXMultVec,
+# PSMTXMultVecArray); a direct call would reach the translated body instead.
+DISPATCHER_NATIVE = {0x8030D0C8, 0x8030D0FC, 0x8030DA44, 0x8030DA98}
 
 
 def watched_addresses():
@@ -88,7 +92,8 @@ def transform(text, own_start, starts, index_of, watched):
             if i < 0 or dol_starts[i] == own_start:
                 continue
             chunk = dol_starts[i]
-            if (target in watched or ret in watched or site in watched or ret != site + 4
+            if (target in watched or target in DISPATCHER_NATIVE or ret in watched or site in watched
+                    or ret != site + 4
                     or f"\nlabel_{ret:08X}:\n" not in body):
                 continue
             pieces.append(body[cursor:m.start()])

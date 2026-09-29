@@ -34,7 +34,7 @@ PROFILE_HOST_PGO=scripts/builder/profiles/bluewake/host.profdata
 
 # Wind Waker Recomp builds from its own copies of BlueWake's RecompCore and
 # DolRecomp (chrissotraidis 2d60636 and 5c91d6e, each plus this fork's changes:
-# patches/recompcore/0098-0104, patches/dolrecomp/0019).
+# patches/recompcore/0098-0108, patches/dolrecomp/0019).
 RECOMPCORE_URL=https://github.com/elliotttate/RecompCore.git
 RECOMPCORE_SHA=96e76b2010b79451f3afea5dd1dcaa75655573b4
 DOLRECOMP_SHA=b8b534591cba8ca7cd43943a655ee6e2591cf5de
@@ -195,6 +195,12 @@ profile_train() {
 }
 
 profile_compile() {
+    run native-gpr-prepare python3 "$root/scripts/mods/prepare_native_gpr.py" "$out/composite-src"
+    if [ -f "$out/composite-src/simulation_60hz.json" ]; then
+        run timing-recertify python3 "$root/scripts/mods/prepare_simulation_60hz.py" "$out/composite-src"
+    fi
+    run native-gpr-certify python3 "$root/scripts/mods/prepare_native_gpr.py" "$out/composite-src"
+    run native-math-certify python3 "$root/scripts/mods/prepare_native_math.py" "$out/composite-src"
     local flags="-mcpu=$device_cpu"
     if [ ${#composite_pgo[@]} -gt 0 ]; then
         run composite-pgo-merge xcrun llvm-profdata merge -o "$out/composite.profdata" "${composite_pgo[@]}"
