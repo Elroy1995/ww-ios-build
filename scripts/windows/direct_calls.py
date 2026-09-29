@@ -13,10 +13,12 @@ called through the chunk table, and if control comes back to the return
 address with nothing to do there either, the caller carries on at its block
 there. Otherwise the chunk leaves as before, with ctx->pc where the guest is.
 
-Only calls into the main executable's code are rewritten, and none whose
-target or return address the host names (runtime/host/src, windows/src): the
-host hooks those addresses in its edge service, which a direct call does not
-consult. Calls to the register save and restore routines are already inline
+Calls into the main executable's code are rewritten, including the REL
+modules' calls to it through its 0xC0 mirror (which the dispatcher otherwise
+resolves on its slow path), and calls between a REL module's chunks. None
+whose target or return address the host names (runtime/host/src,
+windows/src, either mirror form) is: the host hooks those addresses in its
+edge service, which a direct call does not consult. Calls to the register save and restore routines are already inline
 (scripts/windows/inline_save_restore_gpr.py) and keep that form.
 
 The change is repeatable (a prepared chunk is left as it is) and keeps LF line
@@ -42,6 +44,8 @@ CALL = re.compile(
 FUNCTION = re.compile(r"^(?:static )?void \w+\(CPUState\* ctx_param\) \{$", re.M)
 TABLE = re.compile(r"static DolRecompFunction s_dolrecomp_chunk_fns\[\] = \{(.*?)\};", re.S)
 DOL_CODE = (0x80003100, 0x80400000)
+REL_CODE = (0xC0400000, 0xC2000000)  # the REL modules' translated code (rel_modules.inc)
+MIRROR = 0x40000000
 # Entries the dispatcher answers with native code when BLUEWAKE_NATIVE_MATH is
 # on (cmake/composite/native_math.c: PSMTXCopy, PSMTXConcat, PSMTXMultVec,
 # PSMTXMultVecArray); a direct call would reach the translated body instead.
@@ -73,12 +77,26 @@ def chunk_table(root):
     return starts, {start: index for index, start in enumerate(starts)}
 
 
+def resolve(target):
+    """The address the dispatcher runs for a call to `target`, or None when a
+    direct call cannot stand in for it: main-executable code; that code through
+    its 0xC0 mirror, which REL modules call it by and which the dispatcher
+    strips before it looks the code up (dolrecomp_call_slow); or REL code."""
+    if DOL_CODE[0] <= target < DOL_CODE[1]:
+        return target
+    if DOL_CODE[0] | MIRROR <= target < DOL_CODE[1] | MIRROR:
+        return target & ~MIRROR
+    if REL_CODE[0] <= target < REL_CODE[1]:
+        return target
+    return None
+
+
 def transform(text, own_start, starts, index_of, watched):
     if MARK in text:
         return text, 0
     if INCLUDE not in text:
         raise ValueError("no generated.h include")
-    dol_starts = sorted(s for s in starts if DOL_CODE[0] <= s < DOL_CODE[1])
+    all_starts = sorted(starts)
     bounds = [m.start() for m in FUNCTION.finditer(text)] + [len(text)]
     out, done, last = [], 0, 0
     for begin, end in zip(bounds, bounds[1:]):
@@ -86,16 +104,20 @@ def transform(text, own_start, starts, index_of, watched):
         pieces, cursor = [], 0
         for m in CALL.finditer(body):
             site, target, ret = int(m.group(1), 16), int(m.group(2), 16), int(m.group(3), 16)
-            if not (DOL_CODE[0] <= target < DOL_CODE[1]):
+            run = resolve(target)
+            if run is None:
                 continue
-            i = bisect.bisect_right(dol_starts, target) - 1
-            if i < 0 or dol_starts[i] == own_start:
+            i = bisect.bisect_right(all_starts, run) - 1
+            if i < 0 or all_starts[i] == own_start:
                 continue
-            chunk = dol_starts[i]
-            if (target in watched or target in DISPATCHER_NATIVE or ret in watched or site in watched
-                    or ret != site + 4
+            chunk = all_starts[i]
+            if (target in watched or run in watched or run in DISPATCHER_NATIVE or ret in watched
+                    or site in watched or ret != site + 4
                     or f"\nlabel_{ret:08X}:\n" not in body):
                 continue
+            # The dispatcher enters the callee with ctx->pc at the address it
+            # runs; a mirrored call leaves the original pc if it goes round.
+            enter = f"                ctx->pc = 0x{run:08X}u;\n" if run != target else ""
             pieces.append(body[cursor:m.start()])
             pieces.append(
                 f"    // {m.group(1)}: bl      0x{m.group(2)}\n"
@@ -103,6 +125,7 @@ def transform(text, own_start, starts, index_of, watched):
                 f"            ctx->lr = 0x{m.group(3)}u;\n"
                 f"            ctx->pc = 0x{m.group(2)}u;\n"
                 "            if (bw_direct_call_ready(ctx)) {\n"
+                + enter +
                 "                bw_direct_depth++;\n"
                 f"                bw_chunk_fns[{index_of[chunk]}](ctx);\n"
                 "                bw_direct_depth--;\n"
