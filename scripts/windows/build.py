@@ -623,18 +623,34 @@ int main(void) {
         gameplay's timing sites (docs/SIMULATION_60HZ.md; off unless asked
         for), whose manifest hashes the chunks as they end up. Each leaves a
         finished chunk as it is."""
-        self.run("guest-cpu", [sys.executable, ROOT / "scripts/windows/global_guest_cpu.py", root])
-        self.run("gpr-inline", [sys.executable, ROOT / "scripts/windows/inline_save_restore_gpr.py", root])
-        self.run("chunk-headers", [sys.executable, ROOT / "scripts/windows/chunk_headers.py", root])
-        self.run("direct-calls", [sys.executable, ROOT / "scripts/windows/direct_calls.py", root])
-        self.run("native-skin", [sys.executable, ROOT / "scripts/windows/native_skin.py", root])
-        self.run("fast-blocks", [sys.executable, ROOT / "scripts/windows/fast_blocks.py", root])
-        self.run("simulation-prepare", [sys.executable, ROOT / "scripts/mods/prepare_simulation_60hz.py", root])
+        self.source_step("guest-cpu", "scripts/windows/global_guest_cpu.py", root)
+        self.source_step("gpr-inline", "scripts/windows/inline_save_restore_gpr.py", root)
+        self.source_step("chunk-headers", "scripts/windows/chunk_headers.py", root)
+        self.source_step("direct-calls", "scripts/windows/direct_calls.py", root)
+        self.source_step("native-skin", "scripts/windows/native_skin.py", root)
+        self.source_step("fast-blocks", "scripts/windows/fast_blocks.py", root)
+        self.source_step("simulation-prepare", "scripts/mods/prepare_simulation_60hz.py", root)
         # Last: its manifest hashes whole chunk files, as they end up.
-        self.run("native-math", [sys.executable, ROOT / "scripts/mods/prepare_native_math.py", root])
+        self.source_step("native-math", "scripts/mods/prepare_native_math.py", root)
         for name in ("guest-cpu", "gpr-inline", "chunk-headers", "direct-calls", "native-skin", "fast-blocks",
                      "simulation-prepare", "native-math"):
             print((self.logs / f"{name}.log").read_text(errors="replace").strip().splitlines()[-1])
+
+    def source_step(self, name, script, root):
+        """One source step. A run that crashed (a Windows exception status, not an
+        error the script reports) is run once more: each step leaves a chunk it
+        has finished as it is, so the second run completes the first. Python
+        once stopped on an access violation part of the way through
+        fast_blocks.py, and the same run again finished."""
+        command = [sys.executable, ROOT / script, root]
+        try:
+            self.run(name, command)
+        except BuildError as error:
+            status = re.search(r"\(exit (\d+)\)", str(error))
+            if status is None or int(status.group(1)) < 0xC0000000:
+                raise
+            print(f"  {name} crashed (exit 0x{int(status.group(1)):08X}); running it again")
+            self.run(name, command)
 
     def finish_in_place(self):
         """A composite source finished before these steps existed: finish it
@@ -720,8 +736,13 @@ int main(void) {
     # stays in the build directory (docs/BUILDER.md). Unlike the Mac, the
     # bundled Apple-silicon profiles are not used: this one covers the runtime
     # in the module too, from this compiler.
-    TRAINING_VERSION = "2"
+    TRAINING_VERSION = "3"
     TRAINING_RETRACES = 23000
+    # After player control (retrace 20,257 on the lookout), Link runs - off the
+    # lookout, around Outset, turning - instead of standing until the end: the
+    # collision, movement and animation code that play spends its time in is
+    # then trained hot, not compiled cold for size. retrace:buttons:length:x:y.
+    TRAINING_RUN = ["20400:0:700:0:127", "21100:0:500:90:110", "21600:0:500:-90:110", "22100:0:900:0:127"]
 
     def training_fingerprint(self):
         """What the recorded counts depend on: the game source (mods included),
@@ -826,7 +847,7 @@ int main(void) {
             "BLUEWAKE_OVERLAP_OBSERVATION": "1",
             "BLUEWAKE_PAD_PULSE_ON_TITLE_READY": "1", "BLUEWAKE_PAD_PULSE_LENGTH": "2",
             "BLUEWAKE_PAD_CONFIRM_EVENT": "any",
-            "BLUEWAKE_PAD_SCRIPT": ",".join(f"{n}:0x0100:2" for n in range(17800, 22001, 150)),
+            "BLUEWAKE_PAD_SCRIPT": ",".join([f"{n}:0x0100:2" for n in range(17800, 22001, 150)] + self.TRAINING_RUN),
         })
         if mods:
             env["BLUEWAKE_MODS"] = mods
