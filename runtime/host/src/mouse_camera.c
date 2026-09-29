@@ -1,6 +1,7 @@
 #include "mouse_camera.h"
 #include "jump_button.h"
 #include "settings_menu.h"
+#include "save_state.h"
 
 #include "gxruntime/aurora_backend.h"
 
@@ -165,6 +166,10 @@ static void observe(const void* sdl_event, void* user) {
     if (bluewake_settings_menu_event(sdl_event))
         return;
     bluewake_jump_button_event(sdl_event);
+    // Debug save states: F5 saves, F9 loads the last one (main.c).
+    if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat &&
+        (event->key.scancode == SDL_SCANCODE_F5 || event->key.scancode == SDL_SCANCODE_F9))
+        bluewake_save_state_hotkey(event->key.scancode == SDL_SCANCODE_F9);
     if (!g_enabled)
         return;
     switch (event->type) {

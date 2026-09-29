@@ -48,8 +48,9 @@ add_executable(bluewake_host
     src/pad_waypoint.c
     src/pad_wire.c
     src/rel_scratch_allocator.c
-    src/scheduler_contract.c)
-target_link_libraries(bluewake_host PRIVATE gxruntime GXRuntime::aurora)
+    src/scheduler_contract.c
+    src/save_state.c)
+target_link_libraries(bluewake_host PRIVATE gxruntime GXRuntime::aurora z)
 # The options menu (settings_menu.cpp) draws with Aurora's Dear ImGui.
 if(TARGET imgui)
     target_link_libraries(bluewake_host PRIVATE imgui)
