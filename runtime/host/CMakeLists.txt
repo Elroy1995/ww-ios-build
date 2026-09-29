@@ -160,6 +160,17 @@ target_include_directories(bluewake_simulation_timing_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/composite)
 add_test(NAME bluewake_simulation_timing_test COMMAND bluewake_simulation_timing_test)
 
+add_executable(bluewake_native_math_test
+    ../../tests/native_math_test.c
+    ../../cmake/composite/native_math.c)
+target_link_libraries(bluewake_native_math_test PRIVATE gxruntime ${CMAKE_DL_LIBS})
+target_compile_options(bluewake_native_math_test PRIVATE -ffp-contract=off)
+target_include_directories(bluewake_native_math_test PRIVATE
+    ${GXRUNTIME_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/composite
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../ref/recompcore/Source/Core/Core/PowerPC/StaticRecomp)
+add_test(NAME bluewake_native_math_test COMMAND bluewake_native_math_test)
+
 add_executable(bluewake_fpu_context_test
     ../../tests/fpu_context_test.c
     src/fpu_context.c)

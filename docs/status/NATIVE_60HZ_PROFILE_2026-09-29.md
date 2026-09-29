@@ -8,7 +8,8 @@ close the gap.
 ## Measured performance
 
 Same private timing-patched module and Release host, from the isolated
-`true-60hz` worktree based on `2c9f16c`; RecompCore `b4af144`. Interpolation is
+`true-60hz` worktree based on `2c9f16c`; RecompCore `b4af144` plus the then-uncommitted
+presentation diagnostics (subsequently checkpointed as `fbb5943`). Interpolation is
 off, the experimental simulation mode is on, and saved settings are bypassed.
 The tests load a copy of the Outset card, stop scripted button presses, and
 leave Link stationary. Fortress uses the existing test warp at retrace 900:
@@ -203,3 +204,57 @@ analysis scripts. Native sample PIDs were checked against the actual game
 executable, not its launcher or `/usr/bin/time`. No optimization or gameplay
 source changes were made during this profiling pass, and no private build was
 published or committed.
+
+## Implementation checkpoint, later September 29
+
+The initial game/host changes are pushed at `8435ec7` on
+`elliotttate/Wind-Waker-Recomp:codex/native-60hz`. The separate shared Mac
+checkout was preserved and snapshotted at `78d389e` on
+`codex/mac-source-checkpoint-20260929`. The renderer's existing local changes
+were preserved at `fbb5943` in `elliotttate/RecompCore`, followed by `f7154b5`
+which serializes its texture-layout cache access across the pipeline compiler
+and FIFO worker. The builder now pins that reproducible source commit.
+
+The cache had a concrete concurrent read/insertion race in an
+`absl::flat_hash_map`. The fix also ties its entries to the owning GPU device.
+This removes that race; it does not prove that it was the cause of the earlier
+Fortress crash. Two short Fortress runs completed; longer stress testing is
+separate from performance acceptance.
+
+The mouse-camera adapter now checks its two entry addresses inline before
+making an out-of-line call. A new test-only input switch prevents physical
+controller or mouse activity from changing a rendered benchmark's camera or
+route. Earlier runs with different draw counts or a live-input takeover are
+excluded from optimization comparisons.
+
+Three native SDK matrix leaves are available behind `BLUEWAKE_NATIVE_MATH=1`
+and remain off by default. They validate bounded inputs and RAM ranges, retain
+paired-single rounding, full register results, reservations, stack stores and
+guest cycle charges, and use the original code near device deadlines or for
+unsupported inputs. Source-body certification covers all generated variants;
+CMake rejects stale certification. The test compared **12,000 full CPU states
+and RAM results** with an unoptimized personal module, including in-place
+products, signed zeros, retained NaN lanes and deadline boundaries.
+
+An isolated microbenchmark measured approximately 50/12 ns for matrix copy,
+173/22 ns for concatenation and 75/15 ns for vector transformation
+(original/native). These are kernel timings, not frame-rate results.
+
+| Paired live test | Native math off | Native math on | Interpretation |
+| --- | ---: | ---: | --- |
+| Outset, first implementation | 39.61 FPS | 38.76 FPS | No reliable frame-rate gain; total process instructions fell about 2.5%, CPU cycles were essentially unchanged. |
+| Fortress, revised RAM/validation path | 34.55 FPS | 35.88 FPS | Small measured improvement in this pair; total process instructions fell about 2.0%, cycles about 1.4%. Requires repetition. |
+
+Each pair used the same host/module, fixed test input and matching rendered
+draw counts. All 48 Outset player-state records and all 52 Fortress records
+matched within their respective pairs. The Fortress pair still reports 60
+physics/player updates per 60 retraces, while taking longer than one second
+of wall time to execute them. Desktop activity and thermal variation remain
+limitations of FPS comparisons. Whole-process counters include the graphics
+worker and startup, rather than isolating just the simulation window.
+
+The direct cycle-domain, simulation-timing and native-math tests pass, as do
+source-preparation drift/variant tests. CMake accepts the real native manifest
+and rejects a modified one. This local build configures `BUILD_TESTING=OFF`,
+so these results are from executing the test binaries directly, not CTest.
+Steady real-time 60 FPS and full-game timing compatibility remain unachieved.

@@ -5949,9 +5949,15 @@ int main(int argc, char** argv) {
         if (dol_aurora_initialize(argc, argv, &aurora_config)) {
             aurora_enabled = true;
             bluewake_simulation_renderer_ready();
-            g_live_pad_enabled = true;
-            bluewake_mouse_camera_install();
-            bluewake_settings_menu_install();
+            const char* test_input = getenv("BLUEWAKE_TEST_INPUT_ONLY");
+            const bool scripted_only = test_input && strcmp(test_input, "1") == 0;
+            g_live_pad_enabled = !scripted_only;
+            if (!scripted_only) {
+                bluewake_mouse_camera_install();
+                bluewake_settings_menu_install();
+            } else {
+                fprintf(stderr, "[pad] test input only: physical controls disabled\n");
+            }
             fprintf(stderr, "[host] renderer=aurora window=%ux%u\n",
                     aurora_config.window_width, aurora_config.window_height);
         } else if (renderer_requested) {
@@ -5975,7 +5981,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     fprintf(stderr, "[pad] platform input initialized; live input %s at SI\n",
-            g_live_pad_enabled ? "merged" : "disabled for headless backend");
+            g_live_pad_enabled ? "merged" : "disabled");
 
     const char* card_path = getenv("BLUEWAKE_CARD_PATH");
     if (!bluewake_card_runtime_open(card_path)) {

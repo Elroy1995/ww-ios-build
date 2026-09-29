@@ -4,6 +4,10 @@
 #include "generated_composite.h"
 #include "StaticRecompABI.h"
 #include "dispatch_loop.h"
+#include "native_math.h"
+#include <stdlib.h>
+#include <stdio.h>
+static int s_native_math;
 #ifdef BLUEWAKE_SIMULATION_PATCHED
 #include "simulation_timing.h"
 #endif
@@ -37,6 +41,9 @@ static int host_has_x86_64_v3(void)
 
 static int selected_dispatch(CPUState* ctx, u32 address)
 {
+    if (s_native_math && address >= 0x8030D0C8u && address <= 0x8030DA44u &&
+        bluewake_native_math(ctx, address))
+        return 1;
 #if defined(__x86_64__)
     if (host_has_x86_64_v3())
         return dolrecomp_call__x86_64_v3(ctx, address);
@@ -113,6 +120,21 @@ static const StaticRecompModuleDesc s_desc = {
 
 RECOMP_MODULE_EXPORT const StaticRecompModuleDesc* staticrecomp_get_module(void)
 {
+    const char* native = getenv("BLUEWAKE_NATIVE_MATH");
+#ifdef BLUEWAKE_NATIVE_MATH_VERIFIED
+    s_native_math = native && strcmp(native, "1") == 0 &&
+        strcmp(MODULE_GAME_ID, "GZLE01") == 0;
+#else
+    s_native_math = 0;
+    if (native && strcmp(native, "1") == 0)
+        fprintf(stderr, "[native-math] unavailable: certify SDK sources before rebuilding\n");
+#endif
+    static int report_registered;
+    if (s_native_math && !report_registered) {
+        atexit(bluewake_native_math_report);
+        report_registered=1;
+    }
+    if (s_native_math) fprintf(stderr, "[native-math] bounded GZLE01 matrix leaves enabled\n");
     return &s_desc;
 }
 

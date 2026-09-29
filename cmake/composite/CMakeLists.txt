@@ -59,6 +59,7 @@ message(STATUS "${NUM_CHUNKS} chunk translation units")
 
 add_library(${MODULE_NAME} SHARED
   module_export.c
+  native_math.c
   dispatch_loop.c
   ${GXRUNTIME_DIR}/src/core/cpu.c
   ${GXRUNTIME_DIR}/src/core/cpu_exception.c
@@ -92,6 +93,24 @@ if(EXISTS "${COMPOSITE_DIR}/simulation_60hz.json")
   endforeach()
   target_sources(${MODULE_NAME} PRIVATE simulation_timing.c)
   target_compile_definitions(${MODULE_NAME} PRIVATE BLUEWAKE_SIMULATION_PATCHED=1)
+endif()
+if(EXISTS "${COMPOSITE_DIR}/native_math.json")
+  file(READ "${COMPOSITE_DIR}/native_math.json" NATIVE_MATH_MANIFEST)
+  string(JSON NATIVE_MATH_ABI GET "${NATIVE_MATH_MANIFEST}" abi)
+  string(JSON NATIVE_MATH_FILES LENGTH "${NATIVE_MATH_MANIFEST}" files)
+  if(NOT NATIVE_MATH_ABI EQUAL 1 OR NATIVE_MATH_FILES LESS 2)
+    message(FATAL_ERROR "Invalid native math certification manifest")
+  endif()
+  math(EXPR NATIVE_MATH_LAST "${NATIVE_MATH_FILES} - 1")
+  foreach(INDEX RANGE 0 ${NATIVE_MATH_LAST})
+    string(JSON SOURCE_FILE MEMBER "${NATIVE_MATH_MANIFEST}" files ${INDEX})
+    string(JSON EXPECTED_HASH GET "${NATIVE_MATH_MANIFEST}" files "${SOURCE_FILE}")
+    file(SHA256 "${COMPOSITE_DIR}/${SOURCE_FILE}" ACTUAL_HASH)
+    if(NOT ACTUAL_HASH STREQUAL EXPECTED_HASH)
+      message(FATAL_ERROR "Native math source changed: rerun prepare_native_math.py (${SOURCE_FILE})")
+    endif()
+  endforeach()
+  target_compile_definitions(${MODULE_NAME} PRIVATE BLUEWAKE_NATIVE_MATH_VERIFIED=1)
 endif()
 if(APPLE)
   set_target_properties(${MODULE_NAME} PROPERTIES SUFFIX ".dylib")

@@ -103,11 +103,38 @@ The private module contains 53 verified timing sites in 15 translated chunks.
 
 The host and private game module were rebuilt locally. This work adds the
 optional experimental path; full-game timing correctness and the performance
-work needed for steady 60 FPS remain unfinished. Nothing was committed or
-published. The existing development checkout's controls/settings work was
+work needed for steady 60 FPS remain unfinished. The initial source was committed and pushed to `codex/native-60hz`; no personal
+build was published. The existing development checkout's controls/settings work was
 preserved as the starting point of this isolated checkout.
 
 A subsequent controlled profiling pass measured approximately 39 FPS rendered
 and 40 FPS headless in the same Outset view, and 35 FPS at the tested Fortress
 spawn. See [the native 60 Hz profile](status/NATIVE_60HZ_PROFILE_2026-09-29.md)
 for the measurements, CPU owners and proposed optimization order.
+
+## Native math experiment
+
+`BLUEWAKE_NATIVE_MATH=1` enables bounded native implementations of three SDK
+matrix routines in a newly rebuilt, certified GZLE01 module. This developer
+switch is separate from the gameplay-rate option and remains off by default.
+It preserves the original paired-single rounding and register/memory results,
+uses the original guest cycle charges, and falls back for exceptional inputs,
+quantized memory, write observers or a nearby device deadline. It does not skip
+physics, animation, drawing or alternate simulation ticks.
+
+The builder runs `scripts/mods/prepare_native_math.py` before compiling. For a
+manual composite build, run that script on the generated source folder first;
+CMake verifies its hashes. Edited SDK bodies or variants must be reviewed and
+recertified rather than silently running a replacement for different code.
+
+Build `bluewake_native_math_test` and pass the path to an **unoptimized personal
+module** for full CPU-state and memory comparisons. No disc contents or
+translated bodies are included in the test. An optional second argument
+`--bench` compares isolated leaf throughput; that result does not establish
+whole-game performance.
+
+For reproducible rendered routes, `BLUEWAKE_TEST_INPUT_ONLY=1` disables physical
+controller, keyboard/mouse controls and the settings shortcut in that test
+process. Scheduled test input still runs. Normal launches retain live input.
+The Mac launcher accepts these developer flags through `EXTRA_ENV`, because it
+starts the game with a clean environment.
