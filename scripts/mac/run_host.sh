@@ -24,6 +24,7 @@
 # RENDERER=headless and PACE=0 override the window and real-time pacing.
 # SIMULATION=1 enables experimental 60 Hz gameplay (requires a rebuilt module).
 # ASPECT=16:10|16:9 widescreen (4:3 default), WINDOW=WxH, FULLSCREEN=1, SCALE=N.
+# HZ=120: Smooth Motion at 120 frames a second (three in-between frames a game frame).
 # BWW=1 Better Wind Waker's options (their defaults, plus invert_camera_x so the right
 # stick turns the camera the way the mouse does); OPTIONS=name,-name,... changes them.
 # TEXTURES=DIR an HD texture pack: its GZL folder, or a Dolphin folder holding one.
@@ -34,7 +35,7 @@
 # DUMP_FROM/DUMP_TO: game frames (presents, not retraces) whose real and
 # in-between images are written to OUT_DIR/dump (see frame_interp_report.py).
 set -u
-if [ $# -lt 3 ]; then sed -n '2,37p' "$0"; exit 2; fi
+if [ $# -lt 3 ]; then sed -n '2,38p' "$0"; exit 2; fi
 # The main checkout (build/ lives there), also when run from a git worktree.
 ROOT=$(dirname "$(git -C "$(dirname "$0")" rev-parse --path-format=absolute --git-common-dir)")
 out=$1; interp=$2; retraces=$3; route=${4:-title}; dump_from=${5:-}; dump_to=${6:-}
@@ -106,6 +107,7 @@ fi
 [ -n "${FULLSCREEN:-}" ] && env_args+=(DOL_AURORA_FULLSCREEN="$FULLSCREEN")
 [ -n "${SCALE:-}" ] && env_args+=(DOL_AURORA_RENDER_SCALE="$SCALE")
 [ -n "${SIMULATION:-}" ] && env_args+=(BLUEWAKE_SIMULATION_60HZ="$SIMULATION")
+[ "${HZ:-}" = 120 ] && env_args+=(DOL_AURORA_FRAME_INTERP_STEPS=3)
 # TEXTURES: a Dolphin-format HD texture pack (tex1_*.dds/.png). A Dolphin
 # folder (User/Load/Textures/GZL inside) or a Load/Textures folder also works.
 if [ -n "${TEXTURES:-}" ]; then

@@ -1,8 +1,8 @@
-From d7556be999c44fe34eb6eff6c67132cafb9a6e84 Mon Sep 17 00:00:00 2001
+From f93c05fcf2ef36d9bb3ba44db7a7e28be2539790 Mon Sep 17 00:00:00 2001
 From: elliotttate <elliotttate@gmail.com>
 Date: Tue, 29 Sep 2026 14:11:00 -0400
-Subject: [PATCH] Platform: gather-pipe writes as a run of bytes, for a backend
- that takes a stream
+Subject: [PATCH 112/113] Platform: gather-pipe writes as a run of bytes, for a
+ backend that takes a stream
 
 The game module can collect its gather-pipe stores and hand them over a
 batch at a time (Wind Waker Recomp, cmake/composite/gather_pipe_batch.h),
@@ -23,10 +23,10 @@ matter and writes stay one by one.
  5 files changed, 70 insertions(+)
 
 diff --git a/GXRuntime/backends/aurora/aurora_backend.cpp b/GXRuntime/backends/aurora/aurora_backend.cpp
-index 56542ffd..bb92fcd0 100644
+index 9154c255..97b0e6e8 100644
 --- a/GXRuntime/backends/aurora/aurora_backend.cpp
 +++ b/GXRuntime/backends/aurora/aurora_backend.cpp
-@@ -185,6 +185,9 @@ void install_platform_ops() {
+@@ -184,6 +184,9 @@ void install_platform_ops() {
          .present = aurora_backend_present,
          .mark_gx_begin = aurora_backend_mark_gx_begin,
          .gx_write = aurora_backend_gx_write,
@@ -49,10 +49,10 @@ index 4d54aafa..eea6111a 100644
  void aurora_backend_call_display_list(const void* data, u32 size);
  void aurora_backend_set_array(u32 attr, const void* data, u32 size, u8 stride);
 diff --git a/GXRuntime/backends/aurora/aurora_graphics.cpp b/GXRuntime/backends/aurora/aurora_graphics.cpp
-index f6ccccd9..da0be2cc 100644
+index 4fb32f65..7f15bf70 100644
 --- a/GXRuntime/backends/aurora/aurora_graphics.cpp
 +++ b/GXRuntime/backends/aurora/aurora_graphics.cpp
-@@ -866,6 +866,30 @@ static inline void shadow_frontend_enqueue_word(u64 value, u8 size) {
+@@ -929,6 +929,30 @@ static inline void shadow_frontend_enqueue_word(u64 value, u8 size) {
          g_fifo_publish_local();
  }
  
@@ -83,7 +83,7 @@ index f6ccccd9..da0be2cc 100644
  void shadow_frontend_write(u64 value, u8 size) {
      if (!g_shadow_frontend_enabled || g_shadow_frontend_failed)
          return;
-@@ -1648,6 +1672,26 @@ void aurora_backend_gx_flush(void) {
+@@ -1669,6 +1693,26 @@ void aurora_backend_gx_flush(void) {
  #endif
  }
  

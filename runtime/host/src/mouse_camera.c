@@ -28,7 +28,7 @@
 // camera_draw makes the view matrix from mLookat.
 enum {
     kCameraPointer = 0x803CA718u,
-    kCameraDraw = BLUEWAKE_CAMERA_DRAW, // camera_draw__FP20camera_process_class
+    kCameraDraw = BLUEWAKE_MOUSE_CAMERA_DRAW,
     kLookatEye = 0xD8u,
     kLookatCenter = 0xE4u,
     kCameraAngleY = 0x232u, // camera_class::mAngle.y (fopCamM_GetAngleY)
@@ -57,7 +57,7 @@ enum {
     kEventMode = 0x803C9EA2u, // g_dComIfG_gameInfo.play.mEvtCtrl's mode
     kPlayerPointer = 0x803CA74Cu,
     kPlayerStatus0 = 0x803CA8D0u, // g_dComIfG_gameInfo.play.mPlayerStatus[0][0]
-    kPlayerExecute = BLUEWAKE_PLAYER_EXECUTE, // daPy_Execute__FP9daPy_lk_c (r3: the player)
+    kPlayerExecute = BLUEWAKE_MOUSE_PLAYER_EXECUTE, // r3: the player
     kPlayerAngleY = 0x206u, // fopAc_ac_c::current.angle.y
     kPlayerShapeY = 0x20Eu, // fopAc_ac_c::shape_angle.y
     kPlayerBodyX = 0x2B4u,  // daPy_py_c::mBodyAngle.x (the aim's pitch)
@@ -670,7 +670,7 @@ static void trace_camera(CPUState* cpu, u32 process) {
             guest_pointer(player) ? (s16)mem_read16(cpu, player + kPlayerShapeY) : 0);
 }
 
-void bluewake_mouse_camera_enter(CPUState* cpu, u32 address) {
+void bluewake_mouse_camera_hook(CPUState* cpu, u32 address) {
     if (address == kCameraDraw) {
         if (cpu == NULL)
             return;

@@ -32,10 +32,13 @@ add_executable(bluewake_host
     src/edge_intercepts.c
     src/game_options.c
     src/fast_load.c
+    src/fps_watch.c
     src/jump_button.c
     src/settings_menu.cpp
     src/simulation_mode.c
     src/sprint.c
+    src/quick_doors.c
+    src/draw_tags.c
     src/mouse_camera.c
     src/return_census.c
     src/interrupt_sources.c

@@ -8,8 +8,11 @@ right and down (six output pixels at 3x resolution).
 
 Aurora's native GX API uses a paired 340 encoder/decoder convention. That
 convention was copied into the retail FIFO path, where the encoder is the
-original game and uses 342. RecompCore `88f4b4c` corrects only GXCore's retail
-viewport decoding; the paired Aurora API path remains consistent.
+original game and uses 342. RecompCore `51270de` corrects only GXCore's retail
+viewport decoding; the paired Aurora API path remains consistent. This is the
+main-branch integration of the correction first tested as `88f4b4c` on the
+experimental branch. It preserves the latest main-branch interpolation code
+and does not include the native-60-Hz experiments.
 
 Wind Waker's `m_Do_graphic.cpp::drawDepth` copies the scene and depth to
 half-size textures, then alpha-blends the scene copy over the existing image.
@@ -19,7 +22,7 @@ the type of artifact in the supplied screenshot. This is independent of
 Smooth Motion. The exact screenshot's scene/build/settings have not been
 reproduced, so the fix is not a claim to eliminate every possible outline.
 
-Validation on the isolated Mac build:
+Initial validation on the isolated experimental-branch Mac build:
 
 - Rebuilt the host and passed all five draw-merge/viewport tests. The two new
   viewport tests cover retail full-screen coordinates, fractional origins and
@@ -32,7 +35,14 @@ Validation on the isolated Mac build:
   `build/profile-60hz/outline-30hz*` and `outline-fixed-30hz*`; frame 900 is the
   paired capture, and both runs finish at retrace 2100.
 
-This renderer correction does not complete the separate native-60-Hz work.
+Main-branch integration validation:
 
-On the Windows line (`native-60hz-pc`) the same change is RecompCore `79e2146`,
-recorded as `patches/recompcore/0114-gxcore-retail-viewport-origin.patch`.
+- Applied the same correction to RecompCore `3b65983`, retaining its newer
+  interpolation and presentation work. The standalone `gxcore_viewport_tests`
+  target passes both viewport regressions, and the Mac host rebuild succeeds.
+- Loaded Outset with interpolation off at 1920x1440 and captured retrace 951
+  through the host's existing framebuffer readback. The left/top black-border
+  counts are both zero, and the run stops normally at retrace 1050. The private
+  capture and log remain in ignored `build/profile-60hz/outline-main-capture*`.
+
+This renderer correction does not complete the separate native-60-Hz work.

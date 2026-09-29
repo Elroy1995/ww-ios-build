@@ -8,6 +8,7 @@ extern "C" {
 #include "game_options.h"
 #include "jump_button.h"
 #include "mouse_camera.h"
+#include "quick_doors.h"
 #include "sprint.h"
 #include "simulation_mode.h"
 }
@@ -29,6 +30,7 @@ extern "C" {
 extern "C" {
 void aurora_set_frame_buffer_scale(float scale);
 void aurora_set_frame_interpolation(bool enabled);
+void aurora_set_frame_interp_steps(int steps);
 void aurora_set_fps_overlay(bool enabled);
 void aurora_set_forced_anisotropy(unsigned samples);
 }
@@ -39,11 +41,12 @@ namespace {
 // the menu does not show) is kept as it was.
 const char* const kKeys[] = {
     "BLUEWAKE_ASPECT",          "DOL_AURORA_FULLSCREEN",    "DOL_AURORA_RENDER_SCALE",
-    "DOL_AURORA_FRAME_INTERP",  "DOL_AURORA_SHOW_FPS",      "DOL_AURORA_FORCE_ANISO",
+    "DOL_AURORA_FRAME_INTERP",  "DOL_AURORA_FRAME_INTERP_STEPS", "DOL_AURORA_SHOW_FPS", "DOL_AURORA_FORCE_ANISO",
     "DOL_AURORA_TEXTURE_PACK",  "BLUEWAKE_MODS",            "BLUEWAKE_OPTIONS",
-    "BLUEWAKE_FADE_FRAMES",     "BLUEWAKE_FAST_FORWARD",    "BLUEWAKE_JUMP_BUTTON",
+    "BLUEWAKE_FADE_FRAMES",     "BLUEWAKE_FAST_FORWARD",    "BLUEWAKE_QUICK_DOORS",
+    "BLUEWAKE_JUMP_BUTTON",
     "BLUEWAKE_SPRINT_SPEED",    "BLUEWAKE_MOUSE_CAMERA",    "BLUEWAKE_MOUSE_SENSITIVITY",
-    "BLUEWAKE_MOUSE_INVERT_Y", "BLUEWAKE_SIMULATION_60HZ",
+    "BLUEWAKE_MOUSE_INVERT_Y",  "BLUEWAKE_SIMULATION_60HZ",
 };
 
 std::string g_path;                          // the settings file ("" when none)
@@ -59,6 +62,11 @@ std::vector<std::pair<std::string, bool>> g_options; // name, on
 std::vector<std::string> g_option_titles;
 char g_texture_pack[1024];
 bool g_restart_pending = false;
+// BLUEWAKE_SETTINGS_TEST_OPEN=at:for (seconds after the menu is installed;
+// testing only): opens the menu, and closes it after `for` seconds.
+double g_test_open_at = -1.0, g_test_open_for = 0.0;
+Uint64 g_installed_ms = 0;
+bool g_test_done = false;
 
 std::string env(const char* key, const char* fallback = "") {
     const char* value = std::getenv(key);
@@ -250,11 +258,22 @@ void display_tab() {
     else if (simulation || bluewake_simulation_enabled())
         ImGui::TextWrapped("Targets 60 full game updates per second. Needs more CPU power and may run slowly. Timing fixes are incomplete; dialogues, cutscenes and transitions keep their original timing.");
 
+    // Smooth Motion: the game's 30 frames a second, or in-between frames for
+    // 60 (one each) or 120 (three each, for a 120 Hz display such as a
+    // MacBook Pro's).
+    static const char* const kSmooth[] = {"Off (30, the game's)", "60 frames a second",
+                                          "120 frames a second (120 Hz displays)"};
+    int smooth = !env_on("DOL_AURORA_FRAME_INTERP", false)                      ? 0
+                 : std::atoi(env("DOL_AURORA_FRAME_INTERP_STEPS", "1").c_str()) >= 3 ? 2
+                                                                                    : 1;
     ImGui::BeginDisabled(bluewake_simulation_enabled());
-    bool smooth = bluewake_simulation_enabled() ? false : env_on("DOL_AURORA_FRAME_INTERP", false);
-    if (ImGui::Checkbox("Smooth Motion (60 frames a second)", &smooth)) {
-        set_env("DOL_AURORA_FRAME_INTERP", smooth ? "1" : "0");
-        aurora_set_frame_interpolation(smooth);
+    if (bluewake_simulation_enabled())
+        smooth = 0;
+    if (combo("Smooth Motion", &smooth, kSmooth, 3)) {
+        set_env("DOL_AURORA_FRAME_INTERP", smooth != 0 ? "1" : "0");
+        set_env("DOL_AURORA_FRAME_INTERP_STEPS", smooth == 2 ? "3" : "1");
+        aurora_set_frame_interp_steps(smooth == 2 ? 3 : 1);
+        aurora_set_frame_interpolation(smooth != 0);
     }
     ImGui::EndDisabled();
 
@@ -323,6 +342,11 @@ void gameplay_tab() {
         set_env("BLUEWAKE_FAST_FORWARD", ff ? "1" : "0");
         bluewake_fast_load_reload();
     }
+    bool doors = env_on("BLUEWAKE_QUICK_DOORS", true);
+    if (ImGui::Checkbox("Quick doors (no walk-in or door closing behind Link)", &doors)) {
+        set_env("BLUEWAKE_QUICK_DOORS", doors ? "1" : "0");
+        bluewake_quick_doors_reload();
+    }
 
     ImGui::Separator();
     bool jump = env_on("BLUEWAKE_JUMP_BUTTON", true);
@@ -376,7 +400,23 @@ void controls_tab() {
     ImGui::BulletText("Left bumper jump, left stick click sprint (until Link stops), Back this menu");
 }
 
+void open_menu();
+void close_menu();
+
+void test_hook() {
+    if (g_test_open_at < 0.0 || g_test_done)
+        return;
+    const double t = (SDL_GetTicks() - g_installed_ms) / 1000.0;
+    if (!g_open && t >= g_test_open_at && t < g_test_open_at + g_test_open_for) {
+        open_menu();
+    } else if (g_open && t >= g_test_open_at + g_test_open_for) {
+        close_menu();
+        g_test_done = true;
+    }
+}
+
 void draw(void*) {
+    test_hook();
     if (!g_open)
         return;
     ImGuiIO& io = ImGui::GetIO();
@@ -460,6 +500,10 @@ extern "C" void bluewake_settings_load(void) {
 }
 
 extern "C" void bluewake_settings_menu_install(void) {
+    g_installed_ms = SDL_GetTicks();
+    if (const char* test = std::getenv("BLUEWAKE_SETTINGS_TEST_OPEN"))
+        if (std::sscanf(test, "%lf:%lf", &g_test_open_at, &g_test_open_for) != 2)
+            g_test_open_at = -1.0;
     dol_aurora_set_overlay(draw, nullptr);
     dol_aurora_set_hold(hold, nullptr);
     dol_aurora_set_hold_redraw(true);

@@ -1,3 +1,97 @@
+## 2026-09-29 Cheaper, batched in-between frames and the PC branch's host fixes (Mac-tested)
+
+**Renderer** (RecompCore 6892947, patch 0110):
+- **Encoding:** the render worker binds the vertex and index buffers once a pass and sets bind groups only when they change; a busy scene's replay went from about 4.4 ms to 1.3-1.6 ms.
+- **Batching:** consecutive draws with the same pipeline, constants and textures, whose data follows on, are one draw. Adanmae went from about 6,400 draws a frame to 3,600, the sea from 11,800 to 4,600. In-between frames split a batch whose draws blend differently. `DOL_AURORA_GXCORE_BATCH=0` turns it off.
+- **In-between data:** written into mapped staging buffers and copied on the GPU, instead of a new zero-filled upload buffer every frame (a fifth of the render worker's time).
+- **Pacing:** under sustained overload 60 Hz drops its in-between frames and comes back after 3 s calm. 120 Hz is not lowered unless `DOL_AURORA_FRAME_INTERP_PACING=1`.
+- **Helper thread:** spins less and is woken in batches.
+- **Hidden full-screen window:** asks for no drawable and keeps its surface, so switching away no longer freezes the game for half a second or rebuilds the surface on return.
+- **Diagnostics:** `DOL_GXCORE_DRAW_DUMP=<game frame>` lists every draw of a frame.
+
+**From the PC branch (native-60hz-pc):**
+- Host: the guest-alias registry under a lock for the translation worker (a crash about one launch in eight), graphics address resolutions cached until the registry changes, and the actor search's budget checks collapsed.
+- RecompCore: gather-pipe words straight to the worker's batch, the batch buffer kept, draw plans reset in place, and the texture layout cache locked.
+
+**Other changes:**
+- The mouse camera's per-boundary check is inline.
+- `BLUEWAKE_TEST_PLACE=retrace:x:y:z` stands Link at a position for tests.
+
+**Tested:** Adanmae at 120 Hz holds 119.8 FPS with no slow render items. 40 dumped frames at sea show no pops. 60 Hz and Smooth Motion off hold their rates. `frame_interp_test` and `actor_search_budget_test` pass.
+
+**Known:** the lava in Adanmae renders flat orange. Its texgens read the room's world matrix instead of J3D's projection texture matrix. It is diagnosed, not fixed.
+
+## 2026-09-29 Smooth Motion at 120 FPS (Mac-tested)
+
+**120 FPS** (RecompCore d389b4b, patch 0108). The options menu's Smooth Motion is Off, 60 or 120
+(`DOL_AURORA_FRAME_INTERP_STEPS=3`, or `HZ=120` for `run_host.sh`), for 120 Hz displays such as a
+MacBook Pro's. Each game frame gets three in-between frames, at a quarter, half and three quarters of
+the way: a matched draw is blended once per step, the camera's part motion the screw motion's power at
+t (exactly half at 0.5, so four quarter steps make the whole), and the helper thread stages each
+step's block and a particle's vertices. On the user's save on a beach, full screen with the 4K pack
+and 16x anisotropy: 120 presents a second, 8.4 ms apart at the median.
+
+**A steady present clock** (same patch). Presents are held aside and shown on one clock, continuing
+from the game frame before's last, from two alternating sets of held frames, with what is due
+presented between the in-between frames' replays and every 512 commands of a pass. Before, the first
+in-between frame was presented at once and the rest a quarter of a frame after it: at 120 Hz the
+second came 18 ms late and the third and the real frame back to back when the next frame arrived
+(bursts, the sea shimmering), and at 60 Hz presents alternated 22 and 12 ms apart (now 16.5).
+`DOL_AURORA_PRESENT_LOG=1` logs each present; `DOL_AURORA_PRESENT_CLOCK=0` keeps the old 60 Hz timing.
+
+**The sea blinking out on a shore at 120.** The in-between blocks of a beach at 120 come to about 55 MB
+and the area had 32: 6,900 blocks a frame did not fit, and those draws kept the next frame's transforms
+in two of the three in-between frames, the sea among them. The area now has 32 MB per step. Found by
+dumping 144 game frames walking in the shallows and flagging any in-between frame unlike both real
+frames around it (five in a row, the sea missing); afterwards none.
+
+**Saved options at launch** (RecompCore df6c2b1, patch 0109). Smooth Motion, its steps, the FPS overlay
+and forced anisotropy were read by Aurora's static initialisers, before the host applies the saved
+options, so the menu's 120 came back as 60 and 16x anisotropy as none; the backend reads them again
+at initialisation.
+
+## 2026-09-29 An options menu, quick doors, and Smooth Motion for what the game moves itself (Mac-tested)
+
+**Options menu** (`runtime/host/src/settings_menu.cpp`, Mac; RecompCore 66205c2, patch 0105). F1, a
+controller's Back, or Esc while the mouse is free pauses the game and opens Display, Gameplay and
+Controls tabs over it (`dol_aurora_set_hold_redraw` keeps the paused picture on screen). Choices are
+saved to `~/Library/Application Support/Wind Waker Recomp/settings.ini` and applied at the next launch
+before anything reads the environment; the sprint, jump button, mouse camera, fast loading and quick
+doors also take them at once. Test runs pass `BLUEWAKE_SETTINGS=none`.
+
+**Quick doors** (`runtime/host/src/quick_doors.c`). Through a door with a knob, Link opens it as the
+game has him do; once its fade covers the screen the rest is cut (his walk behind it, the wait, and in
+the next room the door opening and closing again), and he stands inside with the door closed as the
+picture comes back: 5.1 seconds to 1.9. `BLUEWAKE_QUICK_DOORS=0` keeps the game's doors;
+`BLUEWAKE_DOOR_TRACE` logs them. With `BWW=1` the right stick now turns the camera the way the mouse
+does (Better Wind Waker's invert_camera_x).
+
+**Smooth Motion for what the game moves itself** (RecompCore 3b65983, patch 0106;
+`runtime/host/src/draw_tags.c`). The in-between frame blends each draw's matrices, so what the game
+moves another way stepped at 30 FPS or was drawn twice. Sword swings: a bone of Link's arm turns 90
+degrees and more in a game frame, which the old 41-degree bound rejected (150 to 420 draws a frame);
+a draw with a key of its own may now turn 150 degrees, blended as a rotation (slerp) so it keeps its
+size. Particles: before each JPA particle draw the host writes the particle and its age to BP 0x7E
+and 0x7D, registers the retail GX never uses, and the renderer pairs the draw with the same particle
+and blends its corners (dust, spray, smoke, sparkles, ripples). The boat's bow waves and trail, drawn
+by their emitters' callbacks, are announced with their emitter and draw count (BP 0x7C, 0x7B) and
+blend vertex by vertex, so the wake no longer sits half a frame ahead of the bow. A broken pot's
+shards (one model at random sizes, tumbling fast) pair with the nearest copy of their size. The boat:
+its CPU-skinned hull, its shadow-map pass, its real shadow's volume (one box for every shadow, moving
+with the camera) and the sea triangles the shadow is cast on (paired by the shadow's texture, a
+different count as it sails). frame_interp_test covers each case. RecompCore 94b97ce and 060293f
+(patches 0103, 0104) move the matching and blending to a helper thread and fix a device loss on
+Direct3D 12; the inputs a draw's blend needs are now captured with it (DrawInput) for that thread.
+
+**Where 60 is missed** (`runtime/host/src/fps_watch.c`). Once a second with fewer than 57 frames on
+screen: `[fps-dip]` with the game's speed, how many frames were interpolated, rejected and unmatched
+draws, the waits for the GX worker, presents and the GPU, and the stage, room and Link's position
+(`BLUEWAKE_FPS_WATCH=0` turns it off). `DOL_AURORA_FRAME_INTERP_TRACE` takes a range of game frames.
+
+**A crash after a long session.** The host places the game's modules (RELs) in memory above the
+game's 24 MiB; that window was 1.5 MiB. After 27 minutes through many islands it was full of linked
+modules, the sea by the pirate ship needed d_a_bb (52 KB), and the game jumped into the module it
+could not load. The window now starts at 0x81820000 (7.4 MiB).
 ## 2026-09-29 Windows: the settings menu, local optimization training, and a steady 60 FPS
 
 **Settings and window** (`windows/src/win_settings.cpp`). F1 (or Esc) opens an ImGui settings menu over

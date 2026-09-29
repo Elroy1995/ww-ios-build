@@ -1,7 +1,7 @@
 From 060293f5af3a4b4099522194eb4ff99f830795e7 Mon Sep 17 00:00:00 2001
 From: elliotttate <elliotttate@gmail.com>
 Date: Tue, 29 Sep 2026 08:03:19 -0400
-Subject: [PATCH] Aurora: a suppressed present leaves the surface alone
+Subject: [PATCH 104/106] Aurora: a suppressed present leaves the surface alone
 
 With the present suppressed (dol_aurora_set_fast_forward), end_frame's
 callback takes no surface texture, so its status stays at the Error it
@@ -17,7 +17,7 @@ and the status check skipped when it is on.
  1 file changed, 10 insertions(+), 3 deletions(-)
 
 diff --git a/GXRuntime/graphics/aurora/lib/aurora.cpp b/GXRuntime/graphics/aurora/lib/aurora.cpp
-index cd1cfb64..911f6fcd 100644
+index cd1cfb6..911f6fc 100644
 --- a/GXRuntime/graphics/aurora/lib/aurora.cpp
 +++ b/GXRuntime/graphics/aurora/lib/aurora.cpp
 @@ -312,9 +312,12 @@ void end_frame() noexcept {
@@ -57,5 +57,5 @@ index cd1cfb64..911f6fcd 100644
        case wgpu::SurfaceGetCurrentTextureStatus::Timeout:
          Log.warn("Surface texture acquisition timed out");
 -- 
-2.45.2.windows.1
+2.55.0
 

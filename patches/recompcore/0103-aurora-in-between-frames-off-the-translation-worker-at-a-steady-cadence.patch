@@ -1,8 +1,8 @@
 From 94b97ce9e7f96d35c2cc626f97310a776a791e53 Mon Sep 17 00:00:00 2001
 From: elliotttate <elliotttate@gmail.com>
 Date: Tue, 29 Sep 2026 02:27:53 -0400
-Subject: [PATCH] Aurora: in-between frames off the translation worker, at a
- steady cadence
+Subject: [PATCH 103/106] Aurora: in-between frames off the translation worker,
+ at a steady cadence
 
 On a Windows PC (i9-13900KF, RTX 5090) Smooth Motion held Wind Waker below
 30 FPS on Outset: the village is about 10,000 draws a frame, and the FIFO
@@ -34,7 +34,7 @@ saturated, the in-between frame's matching and blending a fifth of it.
  5 files changed, 287 insertions(+), 38 deletions(-)
 
 diff --git a/GXRuntime/graphics/aurora/lib/gfx/common.cpp b/GXRuntime/graphics/aurora/lib/gfx/common.cpp
-index 8cc49e77..226bb2f2 100644
+index 8cc49e7..226bb2f 100644
 --- a/GXRuntime/graphics/aurora/lib/gfx/common.cpp
 +++ b/GXRuntime/graphics/aurora/lib/gfx/common.cpp
 @@ -252,6 +252,10 @@ static std::array<FramePacket, FrameSlotCount> g_framePackets;
@@ -226,7 +226,7 @@ index 8cc49e77..226bb2f2 100644
    ZoneScoped;
    return push(current_frame_packet().uniforms, data, length, g_cachedLimits.minUniformBufferOffsetAlignment);
 diff --git a/GXRuntime/graphics/aurora/lib/gfx/common.hpp b/GXRuntime/graphics/aurora/lib/gfx/common.hpp
-index 3c8a615d..da2305cf 100644
+index 3c8a615..da2305c 100644
 --- a/GXRuntime/graphics/aurora/lib/gfx/common.hpp
 +++ b/GXRuntime/graphics/aurora/lib/gfx/common.hpp
 @@ -304,12 +304,21 @@ static Range push_indices(ArrayRef<T> data, size_t alignment) {
@@ -255,7 +255,7 @@ index 3c8a615d..da2305cf 100644
  static Range push_uniform(const T& data) {
    return push_uniform(reinterpret_cast<const uint8_t*>(&data), sizeof(T));
 diff --git a/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp b/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp
-index f5feb37f..fedcd110 100644
+index f5feb37..fedcd11 100644
 --- a/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp
 +++ b/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp
 @@ -1150,7 +1150,11 @@ void end_game_frame() noexcept {
@@ -271,7 +271,7 @@ index f5feb37f..fedcd110 100644
    g_griddedKeys.clear();
    g_havePredicted = g_leadingMotion >= 0 && g_motions[g_leadingMotion].votes >= kMinMotionVotes;
 diff --git a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
-index 40954c99..48ae6ebe 100644
+index 40954c9..48ae6eb 100644
 --- a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
 +++ b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
 @@ -17,8 +17,12 @@
@@ -586,7 +586,7 @@ index 40954c99..48ae6ebe 100644
        .indexCount = static_cast<uint32_t>(plan.indices.size()),
        .textureBindGroup = textureBindGroup,
 diff --git a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
-index 64015d00..d13fb58a 100644
+index 64015d0..d13fb58 100644
 --- a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
 +++ b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
 @@ -22,6 +22,9 @@ struct DrawData {
@@ -610,5 +610,5 @@ index 64015d00..d13fb58a 100644
  void reset_texture_cache();
  // Once per presented frame: small textures are re-hashed at most once a frame.
 -- 
-2.45.2.windows.1
+2.55.0
 

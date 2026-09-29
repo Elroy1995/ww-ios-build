@@ -22,10 +22,13 @@
 #include "edge_intercepts.h"
 #include "game_options.h"
 #include "fast_load.h"
+#include "fps_watch.h"
 #include "jump_button.h"
 #include "settings_menu.h"
 #include "simulation_mode.h"
 #include "sprint.h"
+#include "quick_doors.h"
+#include "draw_tags.h"
 #include "mouse_camera.h"
 #include "callback_delivery.h"
 #include "cycle_domain.h"
@@ -153,9 +156,15 @@ static bool host_add_shared_guest_alias(u32 linked_start, u32 size,
 // The composite keeps REL code/data at deterministic linked addresses;
 // module 1 begins at 0x81F80000, beyond the retail 24 MiB MEM1 ceiling.
 // Dynamic raw REL images stay in the lower scratch window and are reclaimed
-// on control-object reuse before they can overlap linked code/data.
+// on control-object reuse before they can overlap linked code/data. The
+// window takes the memory the game never uses between its 24 MiB and the
+// linked modules, above the callback return sentinel (0x8180FFF0). It was
+// 1.5 MiB from 0x81E00000: 27 minutes of play through many islands left it
+// full of the modules the stage had linked, the sea by the pirate ship then
+// needed d_a_bb (52 KB) and there was no room, and the game jumped into the
+// module it could not load (2026-09-29).
 #define BLUEWAKE_LINKED_RAM_SIZE 0x02000000u
-#define BLUEWAKE_DYNAMIC_SCRATCH_BASE 0x81E00000u
+#define BLUEWAKE_DYNAMIC_SCRATCH_BASE 0x81820000u
 #define BLUEWAKE_DYNAMIC_SCRATCH_LIMIT 0x81F80000u
 
 // Minimal DSP/ARAM control-register handshake needed by __OSInitAudioSystem.
@@ -1737,6 +1746,8 @@ __attribute__((noinline)) static void host_actor_search_native(CPUState* cpu) {
 
 static bool host_chassis_edge_service(void* user, CPUState* cpu, u32 address) {
     bluewake_mouse_camera_dispatch(cpu, address);
+    bluewake_quick_doors_dispatch(cpu, address);
+    bluewake_draw_tags_dispatch(cpu, address);
     if (bluewake_jump_button_dispatch(cpu, address))
         return true;
     if (__builtin_expect(cpu == NULL || g_turn_census_enabled ||
@@ -4767,7 +4778,9 @@ static void host_sync_vi_cycles(CPUState* cpu) {
         bluewake_mouse_camera_retrace();
         bluewake_jump_button_retrace();
         bluewake_sprint_retrace();
+        bluewake_fps_watch_retrace();
         bluewake_fast_load_retrace(bluewake_host_thread_cpu_us());
+        bluewake_quick_doors_retrace();
         if (g_wall_pace_enabled && !bluewake_fast_load_fast_forward())
             host_wall_pace(g_host_retrace_count);
         if (g_perf_log_enabled)
@@ -6005,14 +6018,20 @@ int main(int argc, char** argv) {
         if (dol_aurora_initialize(argc, argv, &aurora_config)) {
             aurora_enabled = true;
             bluewake_simulation_renderer_ready();
+            // BLUEWAKE_LIVE_PAD=0 (test runs): the pad script alone, even with a
+            // controller connected whose resting axes read as a person.
+            // BLUEWAKE_TEST_INPUT_ONLY=1 also leaves out the mouse camera and
+            // the settings menu.
             const char* test_input = getenv("BLUEWAKE_TEST_INPUT_ONLY");
             const bool scripted_only = test_input && strcmp(test_input, "1") == 0;
-            g_live_pad_enabled = !scripted_only;
+            const char* live_pad = getenv("BLUEWAKE_LIVE_PAD");
+            g_live_pad_enabled = !scripted_only && (live_pad == NULL || live_pad[0] != '0');
             if (!scripted_only) {
                 bluewake_mouse_camera_install();
                 bluewake_settings_menu_install();
             } else {
-                fprintf(stderr, "[pad] test input only: physical controls disabled\n");
+                fprintf(stderr, "[pad] test input only: physical controls disabled
+");
             }
             fprintf(stderr, "[host] renderer=aurora window=%ux%u\n",
                     aurora_config.window_width, aurora_config.window_height);
@@ -6567,7 +6586,10 @@ int main(int argc, char** argv) {
     bluewake_mouse_camera_attach(&cpu);
     bluewake_jump_button_attach(&cpu);
     bluewake_sprint_attach(&cpu);
+    bluewake_fps_watch_attach(&cpu);
     bluewake_fast_load_attach(&cpu);
+    bluewake_quick_doors_attach(&cpu);
+    bluewake_draw_tags_attach(&cpu);
 
     unsigned long long blocks = 0;
     const char* stop_reason = NULL;

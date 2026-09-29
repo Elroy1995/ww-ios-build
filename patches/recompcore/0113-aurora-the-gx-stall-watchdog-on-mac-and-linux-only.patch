@@ -1,0 +1,123 @@
+From e040d0d5308555114f9bd45174e45d90090fec0b Mon Sep 17 00:00:00 2001
+From: elliotttate <elliotttate@gmail.com>
+Date: Tue, 29 Sep 2026 18:36:45 -0400
+Subject: [PATCH 113/113] Aurora: the GX stall watchdog on Mac and Linux only
+
+DOL_GX_STALL_STACKS's watchdog signals the translation and render workers
+(pthread_kill, SIGUSR2) and prints their stacks with backtrace(); Windows has
+none of these. There start_stall_watchdog does nothing and the workers keep no
+pthread handles, so the rest of 6892947 builds for Windows.
+---
+ GXRuntime/backends/aurora/aurora_graphics.cpp       | 13 +++++++++++++
+ GXRuntime/graphics/aurora/lib/gfx/render_worker.cpp |  8 +++++++-
+ GXRuntime/graphics/aurora/lib/gfx/render_worker.hpp |  2 ++
+ 3 files changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/GXRuntime/backends/aurora/aurora_graphics.cpp b/GXRuntime/backends/aurora/aurora_graphics.cpp
+index 7f15bf70..f24c9dc6 100644
+--- a/GXRuntime/backends/aurora/aurora_graphics.cpp
++++ b/GXRuntime/backends/aurora/aurora_graphics.cpp
+@@ -21,10 +21,12 @@
+ #include <mutex>
+ #include <thread>
+ #include <vector>
++#if !defined(_WIN32)
+ #include <execinfo.h>
+ #include <pthread.h>
+ #include <signal.h>
+ #include <unistd.h>
++#endif
+ #include "../../graphics/aurora/lib/gfx/render_worker.hpp"
+ 
+ #if GXRUNTIME_HAS_AURORA_RECOMP
+@@ -493,6 +495,7 @@ void g_fifo_translate(std::vector<std::uint8_t>& batch) {
+ // worker write their call stacks to stderr ([gx-stall-stack]), so what a long
+ // stall waits on is in the session log.
+ std::atomic<long long> g_batch_start_ns{0};
++#if !defined(_WIN32)
+ std::atomic<pthread_t> g_fifo_pthread{};
+ 
+ void stall_stack_handler(int) {
+@@ -505,12 +508,19 @@ void stall_stack_handler(int) {
+     (void)!write(2, kFooter, sizeof kFooter - 1);
+ }
+ 
++#endif
++
+ long long monotonic_ns() {
+     return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+         .count();
+ }
+ 
++#if defined(_WIN32)
++// Windows has no backtrace() or thread signals: DOL_GX_STALL_STACKS is a
++// Mac and Linux diagnostic.
++void start_stall_watchdog() {}
++#else
+ void start_stall_watchdog() {
+     static const bool enabled = [] {
+         const char* env = std::getenv("DOL_GX_STALL_STACKS");
+@@ -541,9 +551,12 @@ void start_stall_watchdog() {
+         }).detach();
+     });
+ }
++#endif
+ 
+ void g_fifo_worker_main() {
++#if !defined(_WIN32)
+     g_fifo_pthread.store(pthread_self(), std::memory_order_release);
++#endif
+     start_stall_watchdog();
+     // Kept across batches: the swap below hands its capacity back to the
+     // handoff, so the game thread's appends reuse it instead of growing a new
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/render_worker.cpp b/GXRuntime/graphics/aurora/lib/gfx/render_worker.cpp
+index 6d82e940..f76073c4 100644
+--- a/GXRuntime/graphics/aurora/lib/gfx/render_worker.cpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/render_worker.cpp
+@@ -6,12 +6,16 @@
+ 
+ #include <tracy/Tracy.hpp>
+ 
++#if !defined(_WIN32)
+ #include <pthread.h>
++#endif
+ 
+ namespace aurora::gfx::render_worker {
+-// The worker's thread, for the GX stall watchdog's stack dumps.
++#if !defined(_WIN32)
++// The worker's thread, for the GX stall watchdog's stack dumps (not on Windows).
+ std::atomic<pthread_t> g_renderPthread{};
+ pthread_t native_thread() { return g_renderPthread.load(std::memory_order_acquire); }
++#endif
+ namespace {
+ constexpr size_t QueueCapacity = 256;
+ constexpr auto IdlePumpInterval = std::chrono::milliseconds{1};
+@@ -40,7 +44,9 @@ void worker_main() {
+   tracy::SetThreadName("Aurora render worker");
+ #endif
+   g_workerThreadId = std::this_thread::get_id();
++#if !defined(_WIN32)
+   g_renderPthread.store(pthread_self(), std::memory_order_release);
++#endif
+ 
+   while (true) {
+     if (g_idleHook) {
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/render_worker.hpp b/GXRuntime/graphics/aurora/lib/gfx/render_worker.hpp
+index bccee8e2..8db81f82 100644
+--- a/GXRuntime/graphics/aurora/lib/gfx/render_worker.hpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/render_worker.hpp
+@@ -15,8 +15,10 @@
+ 
+ namespace aurora::gfx::render_worker {
+ 
++#if !defined(_WIN32)
+ // The worker's thread (0 before it starts), for diagnostics.
+ pthread_t native_thread();
++#endif
+ 
+ enum class ItemType : uint8_t {
+   BeginFrame,
+-- 
+2.45.2.windows.1
+

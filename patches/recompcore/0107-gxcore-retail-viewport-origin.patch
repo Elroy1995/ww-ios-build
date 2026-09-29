@@ -1,22 +1,22 @@
-From 79e2146a027ca04f046bb927a6b4d05ce17a597b Mon Sep 17 00:00:00 2001
+From 51270de609ba8d46f89a337a84b758fde9da0a16 Mon Sep 17 00:00:00 2001
 From: elliotttate <elliotttate@gmail.com>
-Date: Tue, 29 Sep 2026 12:27:40 -0400
-Subject: [PATCH] gxcore: decode the retail XF viewport origin with its 342
- bias
+Date: Tue, 29 Sep 2026 12:32:44 -0400
+Subject: [PATCH] gxcore: fix the retail viewport origin and displaced
+ postprocess outlines
 
 ---
  .../graphics/aurora/lib/gfx/gxcore_draw.cpp   | 19 +-----------
  .../graphics/aurora/lib/gfx/gxcore_draw.hpp   | 15 ++++++++++
- .../graphics/aurora/tests/CMakeLists.txt      |  2 +-
+ .../graphics/aurora/tests/CMakeLists.txt      |  9 ++++++
  .../aurora/tests/gxcore_viewport_test.cpp     | 30 +++++++++++++++++++
- 4 files changed, 47 insertions(+), 19 deletions(-)
+ 4 files changed, 55 insertions(+), 18 deletions(-)
  create mode 100644 GXRuntime/graphics/aurora/tests/gxcore_viewport_test.cpp
 
 diff --git a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
-index 9193de90..abe9f70b 100644
+index 1796f97..2e15d25 100644
 --- a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
 +++ b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
-@@ -1002,24 +1002,7 @@ bool submit_draw_plan(const gxc::DrawPlan& plan) {
+@@ -1011,24 +1011,7 @@ bool submit_draw_plan(const gxc::DrawPlan& plan) {
    }
  
    if (plan.viewport_valid) {
@@ -43,7 +43,7 @@ index 9193de90..abe9f70b 100644
    if (plan.scissor_valid) {
      // Wind Waker draws its 2D layer (HUD, menus and the fade to and from
 diff --git a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
-index 356e1ca0..b4e3974b 100644
+index 1b092c0..85c9bfc 100644
 --- a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
 +++ b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
 @@ -13,6 +13,21 @@
@@ -69,21 +69,25 @@ index 356e1ca0..b4e3974b 100644
    PipelineRef pipeline;
    PipelineRef depthPipeline; // early-Z depth-only pass, 0 when unnecessary
 diff --git a/GXRuntime/graphics/aurora/tests/CMakeLists.txt b/GXRuntime/graphics/aurora/tests/CMakeLists.txt
-index 939e2656..40be48cc 100644
+index dee3f0f..f978cc5 100644
 --- a/GXRuntime/graphics/aurora/tests/CMakeLists.txt
 +++ b/GXRuntime/graphics/aurora/tests/CMakeLists.txt
-@@ -118,7 +118,7 @@ target_link_libraries(os_alloc_tests PRIVATE gtest gtest_main fmt::fmt)
+@@ -116,3 +116,12 @@ target_include_directories(os_alloc_tests PRIVATE
+ target_compile_definitions(os_alloc_tests PRIVATE AURORA TARGET_PC)
+ target_link_libraries(os_alloc_tests PRIVATE gtest gtest_main fmt::fmt)
  gtest_discover_tests(os_alloc_tests)
- 
- if (TARGET GXRuntime::gxcore)
--  add_executable(gxcore_merge_tests gxcore_merge_test.cpp)
-+  add_executable(gxcore_merge_tests gxcore_merge_test.cpp gxcore_viewport_test.cpp)
-   target_include_directories(gxcore_merge_tests PRIVATE ../include ../lib)
-   target_compile_definitions(gxcore_merge_tests PRIVATE AURORA TARGET_PC)
-   target_link_libraries(gxcore_merge_tests PRIVATE GXRuntime::gxcore gtest gtest_main
++
++if (TARGET GXRuntime::gxcore)
++  add_executable(gxcore_viewport_tests gxcore_viewport_test.cpp)
++  target_include_directories(gxcore_viewport_tests PRIVATE ../include ../lib)
++  target_compile_definitions(gxcore_viewport_tests PRIVATE AURORA TARGET_PC)
++  target_link_libraries(gxcore_viewport_tests PRIVATE GXRuntime::gxcore gtest gtest_main
++    fmt::fmt xxhash absl::flat_hash_map dawn::dawncpp_headers TracyClient ${AURORA_SDL3_TARGET})
++  gtest_discover_tests(gxcore_viewport_tests)
++endif()
 diff --git a/GXRuntime/graphics/aurora/tests/gxcore_viewport_test.cpp b/GXRuntime/graphics/aurora/tests/gxcore_viewport_test.cpp
 new file mode 100644
-index 00000000..995cdc56
+index 0000000..995cdc5
 --- /dev/null
 +++ b/GXRuntime/graphics/aurora/tests/gxcore_viewport_test.cpp
 @@ -0,0 +1,30 @@
@@ -117,6 +121,3 @@ index 00000000..995cdc56
 +  EXPECT_FLOAT_EQ(viewport.znear, 0.25f);
 +  EXPECT_FLOAT_EQ(viewport.zfar, 0.75f);
 +}
--- 
-2.45.2.windows.1
-
