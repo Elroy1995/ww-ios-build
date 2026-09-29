@@ -112,19 +112,36 @@ static BlueWakeRelSlot g_rel_slots[BLUEWAKE_MAX_REL_SLOTS];
 static const BlueWakeRelData* g_rel_data;
 static u32 g_rel_data_count;
 
+// The host's guest-alias registry (ppc_guest_alias_*: the REL modules linked
+// over MEM1) changes on the game thread as modules are linked, and the GX
+// translation worker reads it to resolve a display list, vertex array or
+// texture a module keeps in its own data (host_graphics_guest_resolve). An
+// insertion moves the registry's sorted entries under a lookup, which then
+// returns another entry's storage at a wild offset: the translation worker
+// crashed in build_draw_plan_into copying vertices from it (about one launch
+// in eight). Changes and the worker's lookups take this lock; the game
+// thread's own lookups need none, as nothing else changes the registry.
+static pthread_mutex_t g_guest_alias_lock = PTHREAD_MUTEX_INITIALIZER;
+
 static bool host_add_shared_guest_alias(u32 linked_start, u32 size,
                                         const u8* initial_bytes) {
     u8* storage = NULL;
-    if (g_module_alias_add_shared == NULL ||
-        !ppc_guest_alias_add(linked_start, size, initial_bytes))
+    if (g_module_alias_add_shared == NULL)
         return false;
-    if (!ppc_guest_alias_get_storage(linked_start, size, &storage)) {
+    pthread_mutex_lock(&g_guest_alias_lock);
+    bool added = ppc_guest_alias_add(linked_start, size, initial_bytes);
+    if (added && !ppc_guest_alias_get_storage(linked_start, size, &storage)) {
         ppc_guest_alias_remove(linked_start, size);
-        return false;
+        added = false;
     }
+    pthread_mutex_unlock(&g_guest_alias_lock);
+    if (!added)
+        return false;
     if (g_module_alias_add_shared(linked_start, size, storage))
         return true;
+    pthread_mutex_lock(&g_guest_alias_lock);
     ppc_guest_alias_remove(linked_start, size);
+    pthread_mutex_unlock(&g_guest_alias_lock);
     return false;
 }
 
@@ -4498,7 +4515,11 @@ static bool host_graphics_guest_resolve(
     {
         u8* alias = NULL;
         u32 alias_offset = 0u;
-        if (ppc_guest_alias_resolve(address, size, &alias, &alias_offset) && alias != NULL) {
+        // The translation worker's thread: see g_guest_alias_lock.
+        pthread_mutex_lock(&g_guest_alias_lock);
+        const bool aliased = ppc_guest_alias_resolve(address, size, &alias, &alias_offset);
+        pthread_mutex_unlock(&g_guest_alias_lock);
+        if (aliased && alias != NULL) {
             *data = alias;
             *available = size;
             return true;
@@ -6305,7 +6326,9 @@ int main(int argc, char** argv) {
             return 1;
         }
         module_alias_clear();
+        pthread_mutex_lock(&g_guest_alias_lock);
         ppc_guest_alias_clear();
+        pthread_mutex_unlock(&g_guest_alias_lock);
         u32 rel_storage_alias_count = 0u;
         for (u32 i = 0; i < rel_data_count; ++i) {
             const BlueWakeRelData* image = &rel_data[i];
