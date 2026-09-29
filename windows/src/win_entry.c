@@ -425,7 +425,37 @@ static LONG WINAPI report_crash(EXCEPTION_POINTERS* info) {
         fprintf(stderr, ", %s address 0x%llx",
                 record->ExceptionInformation[0] == 1 ? "writing" : "reading",
                 (unsigned long long)record->ExceptionInformation[1]);
-    fprintf(stderr, "\n");
+    fprintf(stderr, " thread %lu\n", GetCurrentThreadId());
+    // The calls that led there, as module+offset (the build's PDB names them:
+    // llvm-symbolizer --obj=BlueWake.exe), unwound from the exception's own
+    // context with the image's unwind data.
+    CONTEXT context = *info->ContextRecord;
+    for (int frame = 0; frame < 24 && context.Rip != 0; ++frame) {
+        HMODULE frame_module = NULL;
+        char frame_name[MAX_PATH] = "?";
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                   GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               (LPCSTR)context.Rip, &frame_module)) {
+            GetModuleFileNameA(frame_module, frame_name, sizeof frame_name);
+            const char* base = strrchr(frame_name, '\\');
+            if (base != NULL)
+                memmove(frame_name, base + 1, strlen(base));
+        }
+        fprintf(stderr, "[crash] #%d %s+0x%llx\n", frame, frame_name,
+                (unsigned long long)(context.Rip - (DWORD64)frame_module));
+        DWORD64 image_base = 0;
+        PRUNTIME_FUNCTION function = RtlLookupFunctionEntry(context.Rip, &image_base, NULL);
+        if (function == NULL) {
+            // A leaf function: the return address is on top of the stack.
+            context.Rip = *(DWORD64*)context.Rsp;
+            context.Rsp += 8;
+        } else {
+            void* handler_data = NULL;
+            DWORD64 establisher = 0;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, image_base, context.Rip, function, &context,
+                             &handler_data, &establisher, NULL);
+        }
+    }
     fflush(stderr);
     // Give the log pump a moment to write the line before the process ends.
     Sleep(250);
