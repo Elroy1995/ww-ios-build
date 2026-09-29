@@ -817,7 +817,18 @@ int main(void) {
         })
         if mods:
             env["BLUEWAKE_MODS"] = mods
-        log = self.run(f"training-playback-{run.name[4:]}", [exe, "--module", module], env=env)
+        # A playback that crashes leaves no counts to merge, and another run of
+        # the same opening records the same ones, so a crash is retried once.
+        for attempt in (1, 2):
+            for stale in run.glob("*.profraw"):
+                stale.unlink()
+            try:
+                log = self.run(f"training-playback-{run.name[4:]}", [exe, "--module", module], env=env)
+                break
+            except BuildError:
+                if attempt == 2:
+                    raise
+                print("  the playback ended abnormally; running it again")
         text = log.read_text(errors="replace")
         if "[player-milestone] control-admitted" not in text:
             die(f"the training playback did not reach player control; profile rejected (see {log})")
