@@ -161,8 +161,19 @@ static void finish_session_log(void) {
         return;
     fflush(stdout);
     fflush(stderr);
-    _close(_fileno(stdout));
-    _close(_fileno(stderr));
+    // NUL in their place rather than closed: the game module's own exit
+    // handlers run later, when it is unloaded, and a write to a closed
+    // descriptor is an invalid parameter the C runtime ends the process for
+    // (0xC0000409). Replacing them still closes the pipe's write ends.
+    const int null_fd = _open("NUL", _O_WRONLY);
+    if (null_fd >= 0) {
+        _dup2(null_fd, _fileno(stdout));
+        _dup2(null_fd, _fileno(stderr));
+        _close(null_fd);
+    } else {
+        _close(_fileno(stdout));
+        _close(_fileno(stderr));
+    }
     WaitForSingleObject(g_log_thread, 3000);
     CloseHandle(g_log_thread);
     g_log_thread = NULL;
