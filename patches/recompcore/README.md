@@ -9,9 +9,9 @@ The build uses a fork instead. BlueWake's is https://github.com/chrissotraidis/R
 (some were revised by later ones), the files that were never committed on the development Mac, and the
 DolRecomp submodule pointing at https://github.com/chrissotraidis/DolRecomp (5c91d6e). Wind Waker Recomp
 builds from its own copy, https://github.com/elliotttate/RecompCore, commit
-f863821 on branch `native-60hz-pc`: that tree plus 0098 to 0102, then two lines joined by a merge
+79e2146 on branch `native-60hz-pc`: that tree plus 0098 to 0102, then two lines joined by a merge
 commit - the native 60 Hz renderer work (0103 to 0105, branch `codex/native-60hz`, dc81247) and the
-Windows port's in-between frames, present and cache fixes (0106 to 0108) - and 0109 to 0113, with DolRecomp at
+Windows port's in-between frames, present and cache fixes (0106 to 0108) - and 0109 to 0114 (0114 is the native 60 Hz line's viewport origin fix, codex/native-60hz 88f4b4c), with DolRecomp at
 https://github.com/elliotttate/DolRecomp
 (b8b5345, 5c91d6e plus patches/dolrecomp/0019). The Builder fetches it at the commit pinned in
 `scripts/builder/profiles/bluewake.sh`; see docs/status/DEVICE_BUILD.md.

@@ -1,0 +1,122 @@
+From 79e2146a027ca04f046bb927a6b4d05ce17a597b Mon Sep 17 00:00:00 2001
+From: elliotttate <elliotttate@gmail.com>
+Date: Tue, 29 Sep 2026 12:27:40 -0400
+Subject: [PATCH] gxcore: decode the retail XF viewport origin with its 342
+ bias
+
+---
+ .../graphics/aurora/lib/gfx/gxcore_draw.cpp   | 19 +-----------
+ .../graphics/aurora/lib/gfx/gxcore_draw.hpp   | 15 ++++++++++
+ .../graphics/aurora/tests/CMakeLists.txt      |  2 +-
+ .../aurora/tests/gxcore_viewport_test.cpp     | 30 +++++++++++++++++++
+ 4 files changed, 47 insertions(+), 19 deletions(-)
+ create mode 100644 GXRuntime/graphics/aurora/tests/gxcore_viewport_test.cpp
+
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
+index 9193de90..abe9f70b 100644
+--- a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
+@@ -1002,24 +1002,7 @@ bool submit_draw_plan(const gxc::DrawPlan& plan) {
+   }
+ 
+   if (plan.viewport_valid) {
+-    // Raw XF viewport -> logical viewport, the raw path's own formula
+-    // (gx/command_processor.cpp XF 0x1A case).
+-    const float sx = plan.viewport[0];
+-    const float sy = plan.viewport[1];
+-    const float sz = plan.viewport[2];
+-    const float ox = plan.viewport[3];
+-    const float oy = plan.viewport[4];
+-    const float oz = plan.viewport[5];
+-    const float width = sx * 2.0f;
+-    const float height = -sy * 2.0f;
+-    gx::set_logical_viewport({
+-        .left = ox - 340.0f - width / 2.0f,
+-        .top = oy - 340.0f - height / 2.0f,
+-        .width = width,
+-        .height = height,
+-        .znear = (oz - sz) / 1.6777215e7f,
+-        .zfar = oz / 1.6777215e7f,
+-    });
++    gx::set_logical_viewport(retail_viewport(plan.viewport));
+   }
+   if (plan.scissor_valid) {
+     // Wind Waker draws its 2D layer (HUD, menus and the fade to and from
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
+index 356e1ca0..b4e3974b 100644
+--- a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.hpp
+@@ -13,6 +13,21 @@
+ 
+ namespace aurora::gfx::gxcore {
+ 
++// Retail GXSetViewport writes a 342-pixel XF origin bias. Aurora's native
++// GX API has a paired 340 encoder/decoder convention; do not use that
++// convention for FIFO written by the original game. A two-pixel error here
++// shifts geometry once, then shifts an EFB-copy postprocess over it again.
++inline Viewport retail_viewport(const float (&raw)[6]) {
++  return {
++      .left = raw[3] - 342.f - raw[0],
++      .top = raw[4] - 342.f + raw[1],
++      .width = raw[0] * 2.f,
++      .height = -raw[1] * 2.f,
++      .znear = (raw[5] - raw[2]) / 16777215.f,
++      .zfar = raw[5] / 16777215.f,
++  };
++}
++
+ struct DrawData {
+   PipelineRef pipeline;
+   PipelineRef depthPipeline; // early-Z depth-only pass, 0 when unnecessary
+diff --git a/GXRuntime/graphics/aurora/tests/CMakeLists.txt b/GXRuntime/graphics/aurora/tests/CMakeLists.txt
+index 939e2656..40be48cc 100644
+--- a/GXRuntime/graphics/aurora/tests/CMakeLists.txt
++++ b/GXRuntime/graphics/aurora/tests/CMakeLists.txt
+@@ -118,7 +118,7 @@ target_link_libraries(os_alloc_tests PRIVATE gtest gtest_main fmt::fmt)
+ gtest_discover_tests(os_alloc_tests)
+ 
+ if (TARGET GXRuntime::gxcore)
+-  add_executable(gxcore_merge_tests gxcore_merge_test.cpp)
++  add_executable(gxcore_merge_tests gxcore_merge_test.cpp gxcore_viewport_test.cpp)
+   target_include_directories(gxcore_merge_tests PRIVATE ../include ../lib)
+   target_compile_definitions(gxcore_merge_tests PRIVATE AURORA TARGET_PC)
+   target_link_libraries(gxcore_merge_tests PRIVATE GXRuntime::gxcore gtest gtest_main
+diff --git a/GXRuntime/graphics/aurora/tests/gxcore_viewport_test.cpp b/GXRuntime/graphics/aurora/tests/gxcore_viewport_test.cpp
+new file mode 100644
+index 00000000..995cdc56
+--- /dev/null
++++ b/GXRuntime/graphics/aurora/tests/gxcore_viewport_test.cpp
+@@ -0,0 +1,30 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include <gtest/gtest.h>
++#include "gfx/gxcore_draw.hpp"
++
++TEST(GxCoreViewport, RetailFullscreenHasNoExtraOffset) {
++  // Retail GXSetViewport(0, 0, 640, 480, 0, 1), encoded by GXTransform.c.
++  const float raw[6] = {320.f, -240.f, 16777215.f, 662.f, 582.f, 16777215.f};
++  const auto viewport = aurora::gfx::gxcore::retail_viewport(raw);
++  EXPECT_FLOAT_EQ(viewport.left, 0.f);
++  EXPECT_FLOAT_EQ(viewport.top, 0.f);
++  EXPECT_FLOAT_EQ(viewport.width, 640.f);
++  EXPECT_FLOAT_EQ(viewport.height, 480.f);
++  EXPECT_FLOAT_EQ(viewport.znear, 0.f);
++  EXPECT_FLOAT_EQ(viewport.zfar, 1.f);
++  // At 3x the previous 340 decoder displaced every draw six target pixels,
++  // including the postprocess quad which sampled the already-shifted scene.
++  EXPECT_FLOAT_EQ(3.f * viewport.left, 0.f);
++  EXPECT_FLOAT_EQ(3.f * viewport.top, 0.f);
++}
++
++TEST(GxCoreViewport, PreservesFractionalOriginAndDepth) {
++  const float raw[6] = {160.f, -120.f, 8388607.5f, 519.25f, 470.5f, 12582911.25f};
++  const auto viewport = aurora::gfx::gxcore::retail_viewport(raw);
++  EXPECT_FLOAT_EQ(viewport.left, 17.25f);
++  EXPECT_FLOAT_EQ(viewport.top, 8.5f);
++  EXPECT_FLOAT_EQ(viewport.width, 320.f);
++  EXPECT_FLOAT_EQ(viewport.height, 240.f);
++  EXPECT_FLOAT_EQ(viewport.znear, 0.25f);
++  EXPECT_FLOAT_EQ(viewport.zfar, 0.75f);
++}
+-- 
+2.45.2.windows.1
+
