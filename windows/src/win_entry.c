@@ -495,6 +495,7 @@ static void usage(void) {
             "  --aspect A         4:3 (the game's own), 16:10 or 16:9\n"
             "  --smooth           Smooth Motion: 60 FPS with in-between frames (the default;\n"
             "                     F10 toggles it)\n"
+            "  --120              Smooth Motion at 120 FPS (for a 120 Hz display)\n"
             "  --no-smooth        the game's own 30 FPS\n"
             "  --60hz, --30hz     experimental 60 Hz gameplay on or off for this session\n"
             "  --betterww         Better Wind Waker's settings, at their defaults\n"
@@ -563,6 +564,13 @@ int main(int argc, char** argv) {
             // Aurora reads DOL_AURORA_FRAME_INTERP and DOL_AURORA_SHOW_FPS in
             // static initializers, before main: set them through its API.
             _putenv_s("DOL_AURORA_FRAME_INTERP", "1");
+            _putenv_s("DOL_AURORA_FRAME_INTERP_STEPS", "1");
+            aurora_set_frame_interp_steps(1);
+            aurora_set_frame_interpolation(true);
+        } else if (strcmp(a, "--120") == 0) {
+            _putenv_s("DOL_AURORA_FRAME_INTERP", "1");
+            _putenv_s("DOL_AURORA_FRAME_INTERP_STEPS", "3");
+            aurora_set_frame_interp_steps(3);
             aurora_set_frame_interpolation(true);
         } else if (strcmp(a, "--no-smooth") == 0) {
             _putenv_s("DOL_AURORA_FRAME_INTERP", "0");

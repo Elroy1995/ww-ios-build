@@ -53,6 +53,9 @@ bool bluewake_mouse_camera_captured(void);
 bool bluewake_simulation_supported(void);
 bool bluewake_simulation_enabled(void);
 const char* bluewake_game_options_describe(uint32_t position, const char** title, bool* default_on, bool* on);
+// quick_doors.h and fast_load.h: read BLUEWAKE_QUICK_DOORS and BLUEWAKE_FAST_FORWARD again.
+void bluewake_quick_doors_reload(void);
+void bluewake_fast_load_reload(void);
 }
 
 // Aurora's frame counters (lib/gfx/common.hpp, linked in statically), for the
@@ -71,9 +74,12 @@ struct Settings {
     int window_x = INT_MIN, window_y = INT_MIN;
     int render_scale = 0;  // 0: the window's own pixels; 1-4: x 480 lines
     int anisotropy = 1;    // 1: the game's own filtering; 2-16 forced
-    bool smooth_motion = true;
+    bool smooth_motion = true;  // in-between frames, from the game's 30 a second
+    int smooth_steps = 1;       // in-between frames per game frame: 1 (60 FPS) or 3 (120 FPS)
     bool show_fps = false;
     bool pause_unfocused = false;
+    bool fast_forward = true;  // skip through the black while loading (fast_load.h)
+    bool quick_doors = true;   // no walk-in or door closing behind Link (quick_doors.h)
     // Controls: apply at once.
     bool mouse_camera = true;
     double mouse_sensitivity = 1.0;
@@ -133,6 +139,9 @@ void load_file() {
         else if (k == "render_scale") d.render_scale = std::clamp(std::atoi(v.c_str()), 0, 4);
         else if (k == "anisotropy") d.anisotropy = std::clamp(std::atoi(v.c_str()), 1, 16);
         else if (k == "smooth_motion") d.smooth_motion = parse_bool(v);
+        else if (k == "smooth_motion_fps") d.smooth_steps = std::atoi(v.c_str()) >= 120 ? 3 : 1;
+        else if (k == "fast_forward") d.fast_forward = parse_bool(v);
+        else if (k == "quick_doors") d.quick_doors = parse_bool(v);
         else if (k == "show_fps") d.show_fps = parse_bool(v);
         else if (k == "pause_unfocused") d.pause_unfocused = parse_bool(v);
         else if (k == "mouse_camera") d.mouse_camera = parse_bool(v);
@@ -165,6 +174,8 @@ void save_file() {
         std::fprintf(f, "window_position=%d,%d\n", d.window_x, d.window_y);
     std::fprintf(f, "render_scale=%d\nanisotropy=%d\nsmooth_motion=%d\nshow_fps=%d\npause_unfocused=%d\n",
                  d.render_scale, d.anisotropy, d.smooth_motion, d.show_fps, d.pause_unfocused);
+    std::fprintf(f, "smooth_motion_fps=%d\nfast_forward=%d\nquick_doors=%d\n", d.smooth_steps >= 3 ? 120 : 60,
+                 d.fast_forward, d.quick_doors);
     std::fprintf(f, "mouse_camera=%d\nmouse_sensitivity=%.2f\nmouse_invert_y=%d\n", d.mouse_camera,
                  d.mouse_sensitivity, d.mouse_invert_y);
     std::fprintf(f, "controller_invert_x=%d\ncontroller_invert_y=%d\n", d.pad_invert_x, d.pad_invert_y);
@@ -324,6 +335,7 @@ void apply_live() {
     aurora_set_frame_buffer_scale(static_cast<float>(d.render_scale));
     aurora_set_forced_anisotropy(static_cast<unsigned>(d.anisotropy));
     // 60 Hz gameplay draws every frame itself: no in-between frames.
+    aurora_set_frame_interp_steps(d.smooth_steps);
     aurora_set_frame_interpolation(d.smooth_motion && !bluewake_simulation_enabled());
     aurora_set_fps_overlay(d.show_fps);
     aurora_set_pause_on_focus_lost(d.pause_unfocused);
@@ -394,14 +406,23 @@ void tab_display(SDL_Window* w) {
     if (ImGui::Checkbox("Fullscreen   (F11 or Alt+Enter)", &full))
         set_fullscreen(w, full);
     const bool native = bluewake_simulation_enabled();
+    // Smooth Motion: the game's 30 frames a second, or in-between frames for 60
+    // (one each, the default) or 120 (three each, for a 120 Hz display).
+    static const char* const kSmooth[] = {"Off (30 FPS, the game's own)", "60 FPS", "120 FPS (120 Hz displays)"};
+    int smooth = native || !d.smooth_motion ? 0 : d.smooth_steps >= 3 ? 2 : 1;
     ImGui::BeginDisabled(native);
-    if (ImGui::Checkbox("Smooth Motion: 60 FPS   (F10)", &d.smooth_motion)) {
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16);
+    if (ImGui::Combo("Smooth Motion   (F10)", &smooth, kSmooth, IM_ARRAYSIZE(kSmooth))) {
+        d.smooth_motion = smooth != 0;
+        if (smooth != 0)
+            d.smooth_steps = smooth == 2 ? 3 : 1;
+        aurora_set_frame_interp_steps(d.smooth_steps);
         aurora_set_frame_interpolation(d.smooth_motion);
         changed();
     }
     ImGui::EndDisabled();
     ImGui::TextDisabled(native ? "    Off while 60 Hz gameplay runs: every frame is the game's own."
-                               : "    The renderer draws a blended frame between each of the game's 30.");
+                               : "    Blended frames between the game's 30 a second; F10 turns them on and off.");
     if (bluewake_simulation_supported()) {
         if (ImGui::Checkbox("60 Hz gameplay (experimental)", &d.native_60hz))
             changed();
@@ -540,6 +561,18 @@ void tab_enhancements() {
         ImGui::TextDisabled("This build has no Better Wind Waker options (build with mods).");
     ImGui::Unindent();
     ImGui::EndDisabled();
+    ImGui::Spacing();
+    if (ImGui::Checkbox("Quick doors", &d.quick_doors)) {
+        _putenv_s("BLUEWAKE_QUICK_DOORS", d.quick_doors ? "1" : "0");
+        bluewake_quick_doors_reload();
+        changed();
+    }
+    ImGui::TextDisabled("    Link goes through a door without the walk-in, and it does not close behind him.");
+    if (ImGui::Checkbox("Skip through the black while loading", &d.fast_forward)) {
+        _putenv_s("BLUEWAKE_FAST_FORWARD", d.fast_forward ? "1" : "0");
+        bluewake_fast_load_reload();
+        changed();
+    }
     ImGui::Spacing();
     if (ImGui::Checkbox("HD texture pack", &d.hd_textures))
         changed();
@@ -834,6 +867,14 @@ extern "C" void bw_settings_apply_launch(void) {
         env_default("DOL_AURORA_TEXTURE_PACK", texture_folder());
     if (d.lle_audio)
         env_default("BLUEWAKE_DSP_MODE", "lle");
+    if (env_set("BLUEWAKE_QUICK_DOORS"))
+        d.quick_doors = std::getenv("BLUEWAKE_QUICK_DOORS")[0] != '0';
+    else
+        env_default("BLUEWAKE_QUICK_DOORS", d.quick_doors ? "1" : "0");
+    if (env_set("BLUEWAKE_FAST_FORWARD"))
+        d.fast_forward = std::getenv("BLUEWAKE_FAST_FORWARD")[0] != '0';
+    else
+        env_default("BLUEWAKE_FAST_FORWARD", d.fast_forward ? "1" : "0");
     if (env_set("BLUEWAKE_SIMULATION_60HZ"))
         d.native_60hz = std::getenv("BLUEWAKE_SIMULATION_60HZ")[0] == '1';
     else if (d.native_60hz)
@@ -856,8 +897,12 @@ extern "C" void bw_settings_apply_launch(void) {
     env_default("BLUEWAKE_MOUSE_SENSITIVITY", sensitivity);
     if (d.mouse_invert_y)
         env_default("BLUEWAKE_MOUSE_INVERT_Y", "1");
-    // Aurora reads these two before main runs; the command line's --smooth
-    // and --fps (which set them) win over the file.
+    // Aurora reads these before main runs; the command line's --smooth,
+    // --120 and --fps (which set them) win over the file.
+    if (!env_set("DOL_AURORA_FRAME_INTERP_STEPS"))
+        aurora_set_frame_interp_steps(d.smooth_steps);
+    else
+        g_saved.smooth_steps = std::atoi(std::getenv("DOL_AURORA_FRAME_INTERP_STEPS")) >= 3 ? 3 : 1;
     if (!env_set("DOL_AURORA_FRAME_INTERP"))
         aurora_set_frame_interpolation(d.smooth_motion);
     else
@@ -900,7 +945,8 @@ extern "C" int bw_settings_key(unsigned virtual_key, int alt) {
         g_saved.smooth_motion = !aurora_get_frame_interpolation();
         aurora_set_frame_interpolation(g_saved.smooth_motion);
         changed();
-        std::fprintf(stderr, "[windows] Smooth Motion %s\n", g_saved.smooth_motion ? "on" : "off");
+        std::fprintf(stderr, "[windows] Smooth Motion %s\n",
+                     !g_saved.smooth_motion ? "off" : g_saved.smooth_steps >= 3 ? "120 FPS" : "60 FPS");
         return 1;
     case VK_F9:
         g_saved.show_fps = !g_saved.show_fps;
