@@ -4505,7 +4505,7 @@ rebudget:
 
 static bool host_graphics_guest_resolve_uncached(
     CPUState* cpu, u32 address, u32 size, DolGuestAddressSpace space,
-    DolGuestResourceKind resource, const void** data, u32* available);
+    DolGuestResourceKind resource, const void** data, u32* available, bool* any_size);
 
 static bool host_graphics_guest_resolve(
     void* user, u32 address, u32 size, DolGuestAddressSpace space,
@@ -4517,6 +4517,12 @@ static bool host_graphics_guest_resolve(
     // lists draw after draw: 7 percent of it at native 60 Hz. A result depends
     // only on the address, size and space and on the alias registry, so it is
     // kept, per thread, until the registry changes (g_guest_alias_changes).
+    // Where no alias holds the address, no alias holds any range from it, and
+    // the result is the memory from the address whatever the size (a range
+    // that does not fit it fails): such an entry answers every size (size 0
+    // in the entry). A vertex array's size is its indexed span, which changes
+    // from draw to draw, so keyed by size each draw missed, and took the
+    // registry's lock.
     typedef struct GraphicsResolveEntry {
         u32 address, size, space, changes;
         const void* data;
@@ -4524,22 +4530,25 @@ static bool host_graphics_guest_resolve(
     } GraphicsResolveEntry;
     static _Thread_local GraphicsResolveEntry resolved[256];
     const u32 changes = g_guest_alias_changes;
-    GraphicsResolveEntry* const entry = &resolved[((address >> 5) ^ (address >> 13) ^ size) & 255u];
-    if (entry->data != NULL && entry->address == address && entry->size == size &&
-        entry->space == (u32)space && entry->changes == changes) {
+    GraphicsResolveEntry* const entry = &resolved[((address >> 5) ^ (address >> 13)) & 255u];
+    if (entry->data != NULL && entry->address == address && entry->space == (u32)space &&
+        entry->changes == changes && (entry->size == 0u || entry->size == size)) {
+        if (size == 0u || size > entry->available)
+            return false;
         *data = entry->data;
         *available = entry->available;
         return true;
     }
-    if (!host_graphics_guest_resolve_uncached(cpu, address, size, space, resource, data, available))
+    bool any_size = false;
+    if (!host_graphics_guest_resolve_uncached(cpu, address, size, space, resource, data, available, &any_size))
         return false;
-    *entry = (GraphicsResolveEntry){address, size, (u32)space, changes, *data, *available};
+    *entry = (GraphicsResolveEntry){address, any_size ? 0u : size, (u32)space, changes, *data, *available};
     return true;
 }
 
 static bool host_graphics_guest_resolve_uncached(
     CPUState* cpu, u32 address, u32 size, DolGuestAddressSpace space,
-    DolGuestResourceKind resource, const void** data, u32* available) {
+    DolGuestResourceKind resource, const void** data, u32* available, bool* any_size) {
     DolGuestAddressResolver resolver;
     DolGuestResolvedRange range;
     // REL modules run at linked addresses from 0xC0400000, inside the range
@@ -4554,6 +4563,11 @@ static bool host_graphics_guest_resolve_uncached(
         // The translation worker's thread: see g_guest_alias_lock.
         pthread_mutex_lock(&g_guest_alias_lock);
         const bool aliased = ppc_guest_alias_resolve(address, size, &alias, &alias_offset);
+        // Whether an alias holds the address at all: if none does, none holds
+        // a range from it of any size, and the result below is every size's.
+        u8* held = NULL;
+        u32 held_offset = 0u;
+        *any_size = !aliased && !ppc_guest_alias_resolve(address, 1u, &held, &held_offset);
         pthread_mutex_unlock(&g_guest_alias_lock);
         if (aliased && alias != NULL) {
             *data = alias;
