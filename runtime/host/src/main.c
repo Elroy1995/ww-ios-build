@@ -6560,7 +6560,7 @@ int main(int argc, char** argv) {
         const bool want = (direct_env == NULL || strcmp(direct_env, "0") != 0) &&
                           getenv("BLUEWAKE_PER_BLOCK_TURNS") == NULL &&
                           !g_chassis_service_each_block && !g_turn_census_enabled &&
-                          !g_boundary_census_enabled && !g_overlap_observation &&
+                          !g_boundary_census_enabled &&
                           !g_deadline_census_enabled && !g_delivery_safety_census_enabled &&
                           !g_guest_state_trace_enabled;
         if (direct_calls != NULL)

@@ -61,10 +61,11 @@ def step(title):
     print(f"\n==> {title}", flush=True)
 
 
-def default_jobs():
-    """All cores, but no more parallel compiles than memory allows: the large
-    translated chunks take 1 to 3 GB each in clang, and running out of commit
-    kills the compiler ("LLVM ERROR: out of memory"; compile_module retries)."""
+def default_jobs(gb_per_job=2.5):
+    """All cores, but no more parallel compiles than memory allows: running out
+    of commit kills the compiler ("LLVM ERROR: out of memory"; compile_module
+    retries). gb_per_job is one compile's peak commit plus room for the
+    others' growth; what the chunks take is measured in compile_composite."""
     cores = os.cpu_count() or 8
     try:
         import ctypes
@@ -79,7 +80,7 @@ def default_jobs():
         status.dwLength = ctypes.sizeof(MemoryStatus)
         if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
             available = min(status.ullAvailPhys, status.ullAvailPageFile)
-            return max(1, min(cores, int(available // (2.5 * 2**30))))
+            return max(1, min(cores, int(available // (gb_per_job * 2**30))))
     except (AttributeError, OSError):
         pass
     return cores
@@ -673,7 +674,15 @@ int main(void) {
         # Near the commit limit clang can also crash outright instead (an
         # access violation in code generation, gone on a rerun), so a crash is
         # retried the same way, at most twice.
-        jobs = self.args.jobs
+        # Peak commit per compile, measured on the largest and the slowest
+        # chunks of the finished source (clang 22, x86-64): 0.4-0.5 GB, with or
+        # without the profile; twice that leaves room for the others' growth.
+        # (Before finish_tree's steps the slowest took 100-250 s and more
+        # memory: CorrelatedValuePropagation chasing the CPU-state pointer
+        # through one function per chunk was 77 percent of it.)
+        gb_per_job = 1.0 if opt_level == "0" else 1.25
+        jobs = default_jobs(gb_per_job) if self.args.jobs_auto else self.args.jobs
+        print(f"  {jobs} parallel compiles")
         crashes = 0
         while True:
             try:
@@ -799,6 +808,9 @@ int main(void) {
             "BLUEWAKE_DSP_COEF": str(self.recompcore / "Data/Sys/GC/dsp_coef.bin"),
             "BLUEWAKE_MAX_RETRACES": str(self.TRAINING_RETRACES), "BLUEWAKE_WALL_PACE": "0",
             "BLUEWAKE_PLAYER_PROBE": "1", "BLUEWAKE_PAD_BUTTONS": "0x0100",
+            # The player-control milestone below waits on the overlap phase
+            # this observation latches; the Windows app turns it off for play.
+            "BLUEWAKE_OVERLAP_OBSERVATION": "1",
             "BLUEWAKE_PAD_PULSE_ON_TITLE_READY": "1", "BLUEWAKE_PAD_PULSE_LENGTH": "2",
             "BLUEWAKE_PAD_CONFIRM_EVENT": "any",
             "BLUEWAKE_PAD_SCRIPT": ",".join(f"{n}:0x0100:2" for n in range(17800, 22001, 150)),
@@ -1011,6 +1023,9 @@ def main():
                         help="stop after generating the source: checks tools, disc and translation in minutes")
     parser.add_argument("--check-only", action="store_true", help="check tools, dependencies and the disc only")
     args = parser.parse_args()
+    # Chosen again when each compile starts (compile_composite): memory freed
+    # during a long build is used, and each kind of compile has its own size.
+    args.jobs_auto = args.jobs is None
     if args.jobs is None:
         args.jobs = default_jobs()
     if args.jobs < 1:
