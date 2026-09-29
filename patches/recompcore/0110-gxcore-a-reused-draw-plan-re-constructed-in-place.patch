@@ -1,0 +1,42 @@
+From fbaae393e226464dde5d0d1b497cf7f38040f384 Mon Sep 17 00:00:00 2001
+From: elliotttate <elliotttate@gmail.com>
+Date: Tue, 29 Sep 2026 13:27:11 -0400
+Subject: [PATCH] gxcore: a reused draw plan re-constructed in place
+
+build_draw_plan_into reset the plan it reuses with plan = DrawPlan{}: the
+zeroed temporary was built and then all of it, several KB of shader
+constants, copied over the plan, at every draw (about 14,000 a frame). It is
+now destroyed and default-constructed where it is, which is the same state
+without the copy.
+---
+ GXRuntime/graphics/gxcore/src/gxcore.cpp | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/GXRuntime/graphics/gxcore/src/gxcore.cpp b/GXRuntime/graphics/gxcore/src/gxcore.cpp
+index c01cef66..35bdd328 100644
+--- a/GXRuntime/graphics/gxcore/src/gxcore.cpp
++++ b/GXRuntime/graphics/gxcore/src/gxcore.cpp
+@@ -9,6 +9,7 @@
+ #include <cstdlib>
+ #include <cstring>
+ #include <limits>
++#include <memory>
+ 
+ namespace gxruntime::gxcore {
+ 
+@@ -563,7 +564,11 @@ void GxCoreState::build_draw_plan_into(const ar::ConsumedDraw &draw,
+     std::vector<float> vertices = std::move(plan.vertices);
+     auto packed = std::move(plan.packed_vertices);
+     std::vector<std::uint16_t> indices = std::move(plan.indices);
+-    plan = DrawPlan{};
++    // Re-constructed in place: assigning a DrawPlan{} built the zeroed
++    // temporary and then copied all of it (the shader constants are several
++    // KB) over the plan, at every draw.
++    std::destroy_at(&plan);
++    std::construct_at(&plan);
+     vertices.clear();
+     packed.clear();
+     indices.clear();
+-- 
+2.45.2.windows.1
+
