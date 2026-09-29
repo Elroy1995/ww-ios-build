@@ -108,6 +108,7 @@ bool g_placed;
 bool g_pad_applied;
 int g_pad_index = -2;
 float g_font_scale = 1.0f;  // the scale the UI font was drawn at (see load_font)
+float g_refresh;            // the refresh rate of the window's display (0: not known yet)
 
 const char* const kScaleNames[] = {"The window's own pixels", "1x (640x480)", "2x (1280x960)",
                                    "3x (1920x1440)", "4x (2560x1920)"};
@@ -330,12 +331,28 @@ void apply_controller() {
     g_pad_applied = true;
 }
 
+// Smooth Motion's in-between frames per game frame as the display allows:
+// 120 FPS (3) presents faster than a 60 Hz display shows, and as the game
+// waits for its presents it would run at half speed; there it is 60 (1)
+// until the window is on a display of 100 Hz or more. The setting is kept.
+int shown_steps() {
+    return g_saved.smooth_steps >= 3 && (g_refresh == 0.0f || g_refresh >= 100.0f) ? 3 : 1;
+}
+
+void note_refresh(SDL_Window* w) {
+    if (w == nullptr)
+        return;
+    if (const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(w)))
+        g_refresh = mode->refresh_rate;
+}
+
 void apply_live() {
     const Settings& d = g_saved;
+    note_refresh(game_window());
     aurora_set_frame_buffer_scale(static_cast<float>(d.render_scale));
     aurora_set_forced_anisotropy(static_cast<unsigned>(d.anisotropy));
     // 60 Hz gameplay draws every frame itself: no in-between frames.
-    aurora_set_frame_interp_steps(d.smooth_steps);
+    aurora_set_frame_interp_steps(shown_steps());
     aurora_set_frame_interpolation(d.smooth_motion && !bluewake_simulation_enabled());
     aurora_set_fps_overlay(d.show_fps);
     aurora_set_pause_on_focus_lost(d.pause_unfocused);
@@ -416,13 +433,15 @@ void tab_display(SDL_Window* w) {
         d.smooth_motion = smooth != 0;
         if (smooth != 0)
             d.smooth_steps = smooth == 2 ? 3 : 1;
-        aurora_set_frame_interp_steps(d.smooth_steps);
+        aurora_set_frame_interp_steps(shown_steps());
         aurora_set_frame_interpolation(d.smooth_motion);
         changed();
     }
     ImGui::EndDisabled();
     ImGui::TextDisabled(native ? "    Off while 60 Hz gameplay runs: every frame is the game's own."
                                : "    Blended frames between the game's 30 a second; F10 turns them on and off.");
+    if (!native && d.smooth_motion && d.smooth_steps >= 3 && shown_steps() < 3)
+        ImGui::TextDisabled("    This display runs at %.0f Hz: 60 FPS until the window is on a 120 Hz one.", g_refresh);
     if (bluewake_simulation_supported()) {
         if (ImGui::Checkbox("60 Hz gameplay (experimental)", &d.native_60hz))
             changed();
@@ -781,6 +800,12 @@ void frame(void*) {
     static DolAuroraFrameTiming timing_before;
     const Uint64 now = SDL_GetTicks();
     if (now - fps_logged >= 1000) {
+        note_refresh(w);
+        if (aurora_get_frame_interp_steps() != shown_steps()) {
+            aurora_set_frame_interp_steps(shown_steps());
+            std::fprintf(stderr, "[windows] Smooth Motion %s (the display runs at %.0f Hz)\n",
+                         shown_steps() >= 3 ? "120 FPS" : "60 FPS", g_refresh);
+        }
         DolAuroraFrameTiming timing{};
         dol_aurora_frame_timing(&timing);
         if (fps_logged != 0)
