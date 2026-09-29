@@ -735,7 +735,7 @@ int main(void) {
         # The module's own runtime that runs with the game (its dispatch loop and
         # entry points); its build script and cold helpers (the guest CPU's
         # storage, the 60 Hz timing adapters) do not change what the profile counts.
-        for name in ("dispatch_loop.c", "dispatch_loop.h", "module_export.c", "inline_fp.h", "gather_pipe.h", "direct_calls.h"):
+        for name in ("dispatch_loop.c", "dispatch_loop.h", "module_export.c", "inline_fp.h", "gather_pipe.h", "direct_calls.h", "direct_calls.c"):
             path = ROOT / "cmake/composite" / name
             key.update(path.relative_to(ROOT).as_posix().encode())
             key.update(path.read_bytes())

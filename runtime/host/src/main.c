@@ -6592,6 +6592,13 @@ int main(int argc, char** argv) {
                                  &g_interrupts.pi_cause, &g_interrupts.pi_mask)
                         ? "on"
                         : "off");
+        // With them, the module's own test of this service's quiet state and
+        // watched addresses at every other boundary, and indirect calls run
+        // directly (the builder's watch list; cmake/composite/direct_calls.h).
+        typedef int (*EdgeFilterFn)(bool);
+        EdgeFilterFn edge_filter = (EdgeFilterFn)dlsym(lib, "bluewake_composite_edge_filter");
+        if (edge_filter != NULL)
+            fprintf(stderr, "[chassis] edge-filter=%s\n", edge_filter(want) ? "on" : "off");
     }
     // Gather-pipe stores straight to the GX writer (cmake/composite/gather_pipe.h):
     // host_mmio_write does nothing else for them unless the FIFO trace is on.

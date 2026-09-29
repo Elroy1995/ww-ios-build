@@ -144,6 +144,12 @@ if(EXISTS "${COMPOSITE_DIR}/native_gpr.json")
   endforeach()
   target_compile_definitions(${MODULE_NAME} PRIVATE BLUEWAKE_NATIVE_GPR_VERIFIED=1)
 endif()
+if(EXISTS "${COMPOSITE_DIR}/bw_edge_watch.inc")
+  # The Windows builder's list of the guest addresses the host's edge service
+  # acts at (scripts/windows/direct_calls.py): the dispatch loop skips the
+  # service elsewhere, and indirect calls can run directly (direct_calls.h).
+  target_compile_definitions(${MODULE_NAME} PRIVATE BLUEWAKE_EDGE_FILTER=1)
+endif()
 find_package(Threads REQUIRED)
 target_link_libraries(${MODULE_NAME} PRIVATE Threads::Threads)
 if(WIN32)

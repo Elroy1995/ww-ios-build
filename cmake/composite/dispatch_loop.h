@@ -2,6 +2,9 @@
 #define BLUEWAKE_COMPOSITE_DISPATCH_LOOP_H
 
 #include "edge_intercept_abi.h"
+#ifdef BLUEWAKE_EDGE_FILTER
+#include "direct_calls.h"
+#endif
 
 typedef int (*BluewakeCompositeDispatchFn)(CPUState* ctx, u32 address);
 
@@ -43,6 +46,11 @@ static inline int bluewake_chassis_dispatch_loop(
             return 1;
 
         address = ctx->pc;
+#ifdef BLUEWAKE_EDGE_FILTER
+        /* The host's service lets this boundary pass: it is quiet and does not
+         * watch this address (direct_calls.h). Otherwise it is asked. */
+        if (!(bw_edge_filter_enabled && bw_host_quiet(ctx) && bw_edge_unwatched(address)))
+#endif
         if (edge_service(service_user, ctx, address))
             return 1;
 

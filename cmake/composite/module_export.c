@@ -19,6 +19,14 @@ unsigned dolrecomp_call_depth = 0;
 /* The chunk table for the chunks' direct calls (direct_calls.h): calling
  * through it, a call reaches the mods' variants as a dispatch does. */
 void (**const bw_chunk_fns)(CPUState*) = s_dolrecomp_chunk_fns;
+
+/* The dispatcher's lookup for the chunks' indirect direct calls
+ * (direct_calls.c, bw_call_translated): its pc cache, the mods' variants and
+ * the native entries it resolves. */
+DolRecompFunction bw_find_chunk(u32 address)
+{
+    return dolrecomp_find_original(address);
+}
 static BluewakeEdgeServiceFn s_edge_service;
 static void* s_edge_service_user;
 
