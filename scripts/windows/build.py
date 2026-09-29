@@ -615,7 +615,9 @@ int main(void) {
         (scripts/windows/inline_save_restore_gpr.py), include the inline
         helpers (gather-pipe stores, floating point: scripts/windows/chunk_headers.py),
         call across chunks without the chassis loop where the host has nothing
-        to do (scripts/windows/direct_calls.py), then the opt-in 60 Hz
+        to do (scripts/windows/direct_calls.py), run J3DModel::calcWeightEnvelopeMtx
+        natively where its translation is the verified one
+        (scripts/windows/native_skin.py), then the opt-in 60 Hz
         gameplay's timing sites (docs/SIMULATION_60HZ.md; off unless asked
         for), whose manifest hashes the chunks as they end up. Each leaves a
         finished chunk as it is."""
@@ -623,10 +625,12 @@ int main(void) {
         self.run("gpr-inline", [sys.executable, ROOT / "scripts/windows/inline_save_restore_gpr.py", root])
         self.run("chunk-headers", [sys.executable, ROOT / "scripts/windows/chunk_headers.py", root])
         self.run("direct-calls", [sys.executable, ROOT / "scripts/windows/direct_calls.py", root])
+        self.run("native-skin", [sys.executable, ROOT / "scripts/windows/native_skin.py", root])
         self.run("simulation-prepare", [sys.executable, ROOT / "scripts/mods/prepare_simulation_60hz.py", root])
         # Last: its manifest hashes whole chunk files, as they end up.
         self.run("native-math", [sys.executable, ROOT / "scripts/mods/prepare_native_math.py", root])
-        for name in ("guest-cpu", "gpr-inline", "chunk-headers", "direct-calls", "simulation-prepare", "native-math"):
+        for name in ("guest-cpu", "gpr-inline", "chunk-headers", "direct-calls", "native-skin", "simulation-prepare",
+                     "native-math"):
             print((self.logs / f"{name}.log").read_text(errors="replace").strip().splitlines()[-1])
 
     def finish_in_place(self):
@@ -739,7 +743,8 @@ int main(void) {
         # entry points); its build script and cold helpers (the guest CPU's
         # storage, the 60 Hz timing adapters) do not change what the profile counts.
         for name in ("dispatch_loop.c", "dispatch_loop.h", "module_export.c", "inline_fp.h", "gather_pipe.h",
-                     "gather_pipe_batch.h", "direct_calls.h", "direct_calls.c"):
+                     "gather_pipe_batch.h", "direct_calls.h", "direct_calls.c", "native_skin.h", "native_skin.c",
+                     "native_vec.h", "native_vec.c"):
             path = ROOT / "cmake/composite" / name
             key.update(path.relative_to(ROOT).as_posix().encode())
             key.update(path.read_bytes())
@@ -747,7 +752,8 @@ int main(void) {
         # clang matches counts to a function by the shape of its code, and a
         # chunk is one function, so a step that changes that shape leaves the
         # old counts matching nothing.
-        for name in ("global_guest_cpu.py", "inline_save_restore_gpr.py", "chunk_headers.py", "direct_calls.py"):
+        for name in ("global_guest_cpu.py", "inline_save_restore_gpr.py", "chunk_headers.py", "direct_calls.py",
+                     "native_skin.py"):
             path = ROOT / "scripts/windows" / name
             key.update(path.relative_to(ROOT).as_posix().encode())
             key.update(path.read_bytes())

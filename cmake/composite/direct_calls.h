@@ -94,4 +94,10 @@ static inline bool bw_edge_unwatched(u32 address) {
  * The caller has checked bw_direct_call_ready. */
 bool bw_call_translated(CPUState* cpu, u32 target);
 
+/* A direct call to a leaf with a native form (native_math.c's matrix leaves,
+ * native_vec.c's vector leaves): the native, where native math is on, as a
+ * dispatch of a matrix leaf runs it first; zero, with nothing changed, sends
+ * the call to the translated body. */
+int bw_native_call(CPUState* cpu, u32 address);
+
 #endif

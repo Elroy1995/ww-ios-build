@@ -5,6 +5,8 @@
 #include "StaticRecompABI.h"
 #include "dispatch_loop.h"
 #include "native_math.h"
+#include "native_skin.h"
+#include "native_vec.h"
 #include <stdlib.h>
 #include <stdio.h>
 static int s_native_math;
@@ -104,6 +106,12 @@ static int selected_dispatch(CPUState* ctx, u32 address)
     return dolrecomp_call(ctx, address);
 }
 
+/* direct_calls.h: a leaf's native form, where native math is on. */
+int bw_native_call(CPUState* cpu, u32 address)
+{
+    return s_native_math && (bluewake_native_vec(cpu, address) || bluewake_native_math(cpu, address));
+}
+
 void dolrecomp_indirect_dispatch(CPUState* ctx, u32 address)
 {
     (void)selected_dispatch(ctx, address);
@@ -193,6 +201,14 @@ RECOMP_MODULE_EXPORT const StaticRecompModuleDesc* staticrecomp_get_module(void)
             !getenv("BLUEWAKE_RETURN_CENSUS_EDGES") && !getenv("BLUEWAKE_CREDIT_CENSUS");
 #endif
         if (s_native_math || bluewake_inline_gpr_enabled) atexit(bluewake_native_math_report);
+        /* J3DModel::calcWeightEnvelopeMtx and the SDK's vector leaves natively
+         * where the builder routed their calls there (scripts/windows:
+         * native_skin.py, direct_calls.py), with the other certified natives. */
+        bluewake_native_skin_enabled = s_native_math;
+        if (s_native_math) {
+            atexit(bluewake_native_skin_report);
+            atexit(bluewake_native_vec_report);
+        }
         if (s_native_math) fprintf(stderr, "[native-math] bounded GZLE01 matrix leaves enabled\n");
         if (bluewake_inline_gpr_enabled) fprintf(stderr,"[native-gpr] certified caller continuations enabled\n");
     }

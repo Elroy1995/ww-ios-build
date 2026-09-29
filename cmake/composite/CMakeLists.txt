@@ -65,6 +65,8 @@ add_library(${MODULE_NAME} SHARED
   guest_cpu.c
   direct_calls.c
   gather_pipe.c
+  native_skin.c
+  native_vec.c
   ${GXRUNTIME_DIR}/src/core/cpu.c
   ${GXRUNTIME_DIR}/src/core/cpu_exception.c
   ${GXRUNTIME_DIR}/src/core/cpu_interpreter.c
