@@ -34,6 +34,13 @@ port:
   mouse and saved), F11 and Alt+Enter fullscreen, moving the window by its title bar (the place is restored
   at the next launch) and F9's frame rate, driven with hardware-style mouse and keyboard input.
 
+The Windows release of 2026-09-29 (branch `windows-release`: the Mac build's renderer and options from main
+e5c6ae4, RecompCore 825f103) was checked on the same PC with its display at 60 Hz, windowed and paced, Link
+running on Outset from a loaded save: Smooth Motion by default 59.8 frames a second shown (lowest 58.8) with the
+game at its full 30; F10 off and on again (30, then 60); `--no-smooth` 29.9; `--120` and 120 in the settings
+file 60 shown with the game at 30 (the display guard below); `--60hz` 59.9 game frames a second (lowest 59.4).
+120 FPS on a 120 Hz display was not measured on Windows in this pass.
+
 Not yet tried on Windows: a game controller, audio on other output devices, the HD texture packs, the later
 game, and other PCs (AMD CPUs and GPUs, Vulkan, slower CPUs).
 
@@ -139,7 +146,9 @@ starts, so those marked `*` apply when BlueWake starts again; **Restart now** do
 
 **Smooth Motion** is on by default at 60 FPS: the renderer draws a blended frame between each of the game's 30,
 so the game shows 60 frames a second (F9's counter reads `60 FPS (game 30)`). The menu can also choose 120 FPS
-(three in-between frames each, for a 120 Hz display) or turn it off; F10 turns it off and back on. Scenes with
+(three in-between frames each, for a 120 Hz display) or turn it off; F10 turns it off and back on. 120 FPS is
+used only while the window is on a display of 100 Hz or more: on a 60 Hz display the game would wait for
+presents the display cannot show and run at half speed, so it shows 60 there (the menu says so). Scenes with
 nothing to blend (menus, the title, still shots) keep the same rhythm, so the picture's timing does not change
 when they begin or end.
 
