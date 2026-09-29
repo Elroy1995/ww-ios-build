@@ -1,0 +1,36 @@
+From 276e241c48230bbd33031c2b9ef9ca3634c37aed Mon Sep 17 00:00:00 2001
+From: elliotttate <elliotttate@gmail.com>
+Date: Tue, 29 Sep 2026 11:30:09 -0400
+Subject: [PATCH] Aurora: the shader and pipeline caches where the host says
+
+The caches went to SDL's preference folder for the app name, one folder for
+every copy of a host. Two copies running at once (a test run next to a
+player's game, or two test runs) then wrote one SQLite file together, and the
+Dawn cache came out malformed: lookups failed and a run crashed reading a
+blob. DOL_AURORA_CACHE_DIR names the folder; the Windows host points it at
+each data folder, which for a player's default one is where the caches
+already were.
+---
+ GXRuntime/backends/aurora/aurora_backend.cpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/GXRuntime/backends/aurora/aurora_backend.cpp b/GXRuntime/backends/aurora/aurora_backend.cpp
+index 2b8a06b5..a75d0b43 100644
+--- a/GXRuntime/backends/aurora/aurora_backend.cpp
++++ b/GXRuntime/backends/aurora/aurora_backend.cpp
+@@ -240,6 +240,12 @@ bool dol_aurora_initialize(int argc, char** argv,
+         backend_config->app_name != nullptr ? backend_config->app_name
+                                             : defaults.app_name;
+     config.desiredBackend = BACKEND_AUTO;
++    // DOL_AURORA_CACHE_DIR: where the shader and pipeline caches live
++    // (default: SDL's preference folder for the app name). A host that keeps
++    // several data folders points each at its own, so two copies running at
++    // once never write one SQLite file together.
++    if (const char* cache_dir = std::getenv("DOL_AURORA_CACHE_DIR"); cache_dir != nullptr && cache_dir[0] != '\0')
++        config.cachePath = strdup(cache_dir);
+     config.vsync = backend_config->vsync;
+     config.windowWidth = backend_config->window_width != 0
+                              ? backend_config->window_width
+-- 
+2.45.2.windows.1
+

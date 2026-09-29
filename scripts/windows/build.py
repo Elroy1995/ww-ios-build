@@ -423,8 +423,12 @@ int main(void) {
         self.run("app-configure", [
             "cmake", "-S", ROOT / "windows", "-B", self.app_build, "-G", "Ninja",
             "-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++", "-DCMAKE_BUILD_TYPE=Release",
-            f"-DCMAKE_C_FLAGS=-march={self.args.march}", f"-DCMAKE_CXX_FLAGS=-march={self.args.march}",
-            "-DBUILD_TESTING=OFF", "-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld",
+            # Debug information in a PDB beside the build's BlueWake.exe (the
+            # package copies only the exe and DLLs), so a crash address names its
+            # function; /OPT:REF,ICF keep the code what it is without /DEBUG.
+            f"-DCMAKE_C_FLAGS=-march={self.args.march} -g -gcodeview",
+            f"-DCMAKE_CXX_FLAGS=-march={self.args.march} -g -gcodeview",
+            "-DBUILD_TESTING=OFF", "-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld -Wl,/DEBUG -Wl,/OPT:REF -Wl,/OPT:ICF",
             "-DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld",
             f"-DBLUEWAKE_WINDOWS_CONSOLE={'ON' if self.args.console else 'OFF'}"])
 
@@ -516,10 +520,12 @@ int main(void) {
                 shutil.rmtree(base, ignore_errors=True)
                 os.replace(new, base)
             else:
+                self.finish_tree(new)
                 sync_tree(new, current)
             (o / "composite-src.digest").write_text(digest + "\n")
             (o / "composite-inputs.digest").write_text(inputs + "\n")
-            (o / "composite-final.digest").write_text(digest + "\n")
+            (o / "composite-final.digest").write_text(tree_digest(current) + "\n")
+            (o / "composite-mods.digest").write_text(digest + "\n")
             (o / "mods.done").write_text("pending\n")
             self.mods_pending = self.mods
 
@@ -588,11 +594,44 @@ int main(void) {
             "--exclusive", "widescreen,widescreen1610",
             "--options", options, "--rels-bin-dir", o / "game/rels"], cwd=o)
         dst = o / "composite-src"
-        # The base tree plus the variants, in place of the last build's: only
-        # the files that differ are replaced, so a rerun compiles nothing new.
+        (o / "composite-mods.digest").write_text(tree_digest(base) + "\n")
+        # The base tree plus the variants, finished, in place of the last
+        # build's. Finished before it is synced, so a rerun compares finished
+        # chunks with finished ones and replaces (recompiles) only real changes.
+        self.finish_tree(base)
         sync_tree(base, dst)
         (o / "composite-final.digest").write_text(tree_digest(dst) + "\n")
         (o / "mods.done").write_text("complete\n")
+
+    # --- 7b the last source steps --------------------------------------------
+    def finish_tree(self, root):
+        """The Windows source steps after the mods, in order: the chunks address
+        the guest CPU state at its fixed address (scripts/windows/global_guest_cpu.py),
+        run the register save and restore routines inline at their calls
+        (scripts/windows/inline_save_restore_gpr.py), include the inline
+        helpers (gather-pipe stores, floating point: scripts/windows/chunk_headers.py),
+        call across chunks without the chassis loop where the host has nothing
+        to do (scripts/windows/direct_calls.py), then the opt-in 60 Hz
+        gameplay's timing sites (docs/SIMULATION_60HZ.md; off unless asked
+        for), whose manifest hashes the chunks as they end up. Each leaves a
+        finished chunk as it is."""
+        self.run("guest-cpu", [sys.executable, ROOT / "scripts/windows/global_guest_cpu.py", root])
+        self.run("gpr-inline", [sys.executable, ROOT / "scripts/windows/inline_save_restore_gpr.py", root])
+        self.run("chunk-headers", [sys.executable, ROOT / "scripts/windows/chunk_headers.py", root])
+        self.run("direct-calls", [sys.executable, ROOT / "scripts/windows/direct_calls.py", root])
+        self.run("simulation-prepare", [sys.executable, ROOT / "scripts/mods/prepare_simulation_60hz.py", root])
+        for name in ("guest-cpu", "gpr-inline", "chunk-headers", "direct-calls", "simulation-prepare"):
+            print((self.logs / f"{name}.log").read_text(errors="replace").strip().splitlines()[-1])
+
+    def finish_in_place(self):
+        """A composite source finished before these steps existed: finish it
+        where it is (a no-op once it is)."""
+        o = self.out
+        src = o / "composite-src"
+        if not (o / "composite-mods.digest").exists():
+            shutil.copy2(o / "composite-final.digest", o / "composite-mods.digest")
+        self.finish_tree(src)
+        (o / "composite-final.digest").write_text(tree_digest(src) + "\n")
 
     # --- 8 compile -----------------------------------------------------------
     def compile_module(self):
@@ -629,17 +668,24 @@ int main(void) {
         # -k 0: a chunk that fails does not stop the others. The usual cause is
         # memory (clang reports "out of memory" when several of the largest
         # chunks peak together), so what failed is retried with fewer jobs.
+        # Near the commit limit clang can also crash outright instead (an
+        # access violation in code generation, gone on a rerun), so a crash is
+        # retried the same way, at most twice.
         jobs = self.args.jobs
+        crashes = 0
         while True:
             try:
                 self.run(f"{name}-build", ["cmake", "--build", build, "-j", jobs, "--", "-k", "0"], ninja=True)
                 break
             except BuildError:
                 log = (self.logs / f"{name}-build.log").read_text(errors="replace")
-                if jobs <= 1 or "out of memory" not in log:
+                crashed = "frontend command failed due to signal" in log
+                if jobs <= 1 and not crashed or not ("out of memory" in log or crashed) or crashes >= 2:
                     raise
+                crashes += crashed
                 jobs = max(1, jobs // 2)
-                print(f"  some chunks ran out of memory; compiling the rest with {jobs} jobs")
+                reason = "clang crashed on some chunks" if crashed else "some chunks ran out of memory"
+                print(f"  {reason}; compiling the rest with {jobs} jobs")
         module = build / MODULE
         if not module.exists():
             die("the game module was not produced")
@@ -666,17 +712,30 @@ int main(void) {
         can), and training takes the better part of an hour. --retrain forces it."""
         key = hashlib.sha256()
         key.update(f"{self.TRAINING_VERSION}\n{self.clang_version}\n{self.args.march}\n{self.mods}\n".encode())
-        key.update((self.out / "composite-final.digest").read_bytes())
+        # The tree before the 60 Hz timing sites: they change a few chunks'
+        # code only when that mode is on, and the training plays at 30 Hz.
+        key.update((self.out / "composite-mods.digest").read_bytes())
         # The parts of RecompCore compiled into the module (cmake/composite):
         # GXRuntime's CPU core and its headers (the module includes nothing
         # else of GXRuntime's) and the recompiler's ABI. Aurora and the rest of
         # the runtime live in the app.
         for part in ("GXRuntime/src/core", "GXRuntime/include/core", "Source/Core/Core/PowerPC/StaticRecomp"):
             key.update(f"{part} {self.git('-C', str(self.recompcore), 'rev-parse', f'HEAD:{part}')}\n".encode())
-        for path in sorted((ROOT / "cmake/composite").rglob("*")):
-            if path.is_file():
-                key.update(path.relative_to(ROOT).as_posix().encode())
-                key.update(path.read_bytes())
+        # The module's own runtime that runs with the game (its dispatch loop and
+        # entry points); its build script and cold helpers (the guest CPU's
+        # storage, the 60 Hz timing adapters) do not change what the profile counts.
+        for name in ("dispatch_loop.c", "dispatch_loop.h", "module_export.c", "inline_fp.h", "gather_pipe.h", "direct_calls.h"):
+            path = ROOT / "cmake/composite" / name
+            key.update(path.relative_to(ROOT).as_posix().encode())
+            key.update(path.read_bytes())
+        # The source steps that rewrite every chunk after the mods (finish_tree):
+        # clang matches counts to a function by the shape of its code, and a
+        # chunk is one function, so a step that changes that shape leaves the
+        # old counts matching nothing.
+        for name in ("global_guest_cpu.py", "inline_save_restore_gpr.py", "chunk_headers.py", "direct_calls.py"):
+            path = ROOT / "scripts/windows" / name
+            key.update(path.relative_to(ROOT).as_posix().encode())
+            key.update(path.read_bytes())
         return key.hexdigest()
 
     def train(self):
@@ -881,6 +940,8 @@ int main(void) {
             print("mods already in the composite source")
         else:
             self.build_mods()
+        step("the last source steps: the guest CPU's fixed address, 60 Hz gameplay's timing sites")
+        self.finish_in_place()
         if self.train_pgo:
             step("local optimization training (the first time: an instrumented game module and two "
                  "headless playbacks of the opening)")

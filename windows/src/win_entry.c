@@ -455,6 +455,7 @@ static void usage(void) {
             "  --smooth           Smooth Motion: 60 FPS with in-between frames (the default;\n"
             "                     F10 toggles it)\n"
             "  --no-smooth        the game's own 30 FPS\n"
+            "  --60hz, --30hz     experimental 60 Hz gameplay on or off for this session\n"
             "  --betterww         Better Wind Waker's settings, at their defaults\n"
             "  --options LIST     change them: name,-name,... (mods\\betterww\\options.txt)\n"
             "  --fullscreen       start in fullscreen (F11 toggles it while playing)\n"
@@ -525,6 +526,10 @@ int main(int argc, char** argv) {
         } else if (strcmp(a, "--no-smooth") == 0) {
             _putenv_s("DOL_AURORA_FRAME_INTERP", "0");
             aurora_set_frame_interpolation(false);
+        } else if (strcmp(a, "--60hz") == 0) {
+            _putenv_s("BLUEWAKE_SIMULATION_60HZ", "1");
+        } else if (strcmp(a, "--30hz") == 0) {
+            _putenv_s("BLUEWAKE_SIMULATION_60HZ", "0");
         } else if (strcmp(a, "--fullscreen") == 0) {
             _putenv_s("DOL_AURORA_FULLSCREEN", "1");
         } else if (strcmp(a, "--window") == 0 && more) {
@@ -569,8 +574,14 @@ int main(int argc, char** argv) {
     bw_default("BLUEWAKE_MAX_BLOCKS", "100000000000");
     bw_default("BLUEWAKE_DSP_MODE", "hle");
     bw_default("BLUEWAKE_CLOCK", "now");
+    // The route digest's per-boundary observation: nothing to record in play.
+    bw_default("BLUEWAKE_OVERLAP_OBSERVATION", "0");
     bw_default_path("BLUEWAKE_SRAM", g_data_dir, "sram.bin");
     bw_default_path("BLUEWAKE_CARD_PATH", g_data_dir, "GZLE01.card");
+    // The shader and pipeline caches with the rest of this data folder (for the
+    // default folder, where they always were), so a second copy run with its
+    // own BLUEWAKE_DATA_DIR never writes the same SQLite file at the same time.
+    bw_default("DOL_AURORA_CACHE_DIR", g_data_dir);
     bw_default_path("BLUEWAKE_DOL", g_exe_dir, "game\\main.dol");
     bw_default_path("BLUEWAKE_RELS_DIR", g_exe_dir, "game\\rels");
     bw_default_path("BLUEWAKE_DISC", g_exe_dir, "game\\GZLE01.iso");

@@ -22,8 +22,10 @@
 #         WALK=1 holds the stick from retrace 900 (WALK_X/WALK_Y, default 0/-127;
 #         0/127 runs Link back down the pier with the camera turning).
 # RENDERER=headless and PACE=0 override the window and real-time pacing.
+# SIMULATION=1 enables experimental 60 Hz gameplay (requires a rebuilt module).
 # ASPECT=16:10|16:9 widescreen (4:3 default), WINDOW=WxH, FULLSCREEN=1, SCALE=N.
-# BWW=1 Better Wind Waker's options (their defaults); OPTIONS=name,-name,... changes them.
+# BWW=1 Better Wind Waker's options (their defaults, plus invert_camera_x so the right
+# stick turns the camera the way the mouse does); OPTIONS=name,-name,... changes them.
 # TEXTURES=DIR an HD texture pack: its GZL folder, or a Dolphin folder holding one.
 # Mouse: click the window, then move the mouse to turn the camera around Link and
 # tilt it (in first person and when aiming an item, to aim); the wheel zooms;
@@ -32,7 +34,7 @@
 # DUMP_FROM/DUMP_TO: game frames (presents, not retraces) whose real and
 # in-between images are written to OUT_DIR/dump (see frame_interp_report.py).
 set -u
-if [ $# -lt 3 ]; then sed -n '2,36p' "$0"; exit 2; fi
+if [ $# -lt 3 ]; then sed -n '2,37p' "$0"; exit 2; fi
 # The main checkout (build/ lives there), also when run from a git worktree.
 ROOT=$(dirname "$(git -C "$(dirname "$0")" rev-parse --path-format=absolute --git-common-dir)")
 out=$1; interp=$2; retraces=$3; route=${4:-title}; dump_from=${5:-}; dump_to=${6:-}
@@ -93,12 +95,17 @@ fi
 # Better Wind Waker's options (mods/betterww/options.txt): BWW=1 turns on the
 # defaults, OPTIONS=name,-name,... (or none,name,...) adjusts them.
 [ "${BWW:-0}" = 1 ] && env_args+=(BLUEWAKE_MODS=betterww)
+# The game turns the camera the opposite way to the C-stick (pushed left, the
+# view turns right); the mouse turns it the way it moves, so the stick is made
+# to match unless OPTIONS says otherwise.
+[ "${BWW:-0}" = 1 ] && [ -z "${OPTIONS:-}" ] && OPTIONS=invert_camera_x
 [ -n "${OPTIONS:-}" ] && env_args+=(BLUEWAKE_OPTIONS="$OPTIONS")
 [ -n "${MOUSE_SENSITIVITY:-}" ] && env_args+=(BLUEWAKE_MOUSE_SENSITIVITY="$MOUSE_SENSITIVITY")
 [ -n "${MOUSE_INVERT_Y:-}" ] && env_args+=(BLUEWAKE_MOUSE_INVERT_Y="$MOUSE_INVERT_Y")
 [ -n "${WINDOW:-}" ] && env_args+=(DOL_AURORA_WINDOW="$WINDOW")
 [ -n "${FULLSCREEN:-}" ] && env_args+=(DOL_AURORA_FULLSCREEN="$FULLSCREEN")
 [ -n "${SCALE:-}" ] && env_args+=(DOL_AURORA_RENDER_SCALE="$SCALE")
+[ -n "${SIMULATION:-}" ] && env_args+=(BLUEWAKE_SIMULATION_60HZ="$SIMULATION")
 # TEXTURES: a Dolphin-format HD texture pack (tex1_*.dds/.png). A Dolphin
 # folder (User/Load/Textures/GZL inside) or a Load/Textures folder also works.
 if [ -n "${TEXTURES:-}" ]; then

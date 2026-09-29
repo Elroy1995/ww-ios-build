@@ -14,6 +14,7 @@ extern "C" {
 #define BW_RENDER_SCALE_KEY "BlueWake.RenderScale"        // 0 native, 1-4 x 640x480; default 3
 #define BW_ANISOTROPY_KEY "BlueWake.Anisotropy"           // 1 game default, 4/8/16 forced; default 1
 #define BW_FRAME_INTERP_KEY "BlueWake.FrameInterpolation" // bool: 60 FPS in-between frames; default off
+#define BW_SIMULATION_60HZ_KEY "BlueWake.Simulation60Hz" // bool: experimental gameplay timing, next launch
 #define BW_INVERT_CAMERA_X_KEY "BlueWake.InvertCameraX"   // bool
 #define BW_INVERT_CAMERA_Y_KEY "BlueWake.InvertCameraY"   // bool
 #define BW_BUTTON_MAP_KEY "BlueWake.ButtonMap"            // {"A": nativeButton, ...}

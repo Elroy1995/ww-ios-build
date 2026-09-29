@@ -23,6 +23,7 @@
 #include <cmath>
 
 #include "controller_settings.h"
+#include "../../../runtime/host/src/simulation_mode.h"
 #include "dolphin_save_import.h"
 #include "touch_controls.h"
 
@@ -501,9 +502,33 @@ static void BWDumpMenu(UIMenuElement* element, int depth) {
     }];
     smoothMotion.subtitle = @"Experimental: draws a frame between each of the game's";
     smoothMotion.state = [defaults boolForKey:@BW_FRAME_INTERP_KEY] ? UIMenuElementStateOn : UIMenuElementStateOff;
+    if (bluewake_simulation_enabled()) {
+        smoothMotion.attributes = UIMenuElementAttributesDisabled;
+        smoothMotion.state = UIMenuElementStateOff;
+        smoothMotion.subtitle = @"Off while 60 Hz gameplay is running";
+    }
+    UIAction* simulation = [UIAction actionWithTitle:@"60 Hz Gameplay (Experimental)"
+                                               image:[UIImage systemImageNamed:@"speedometer"]
+                                          identifier:nil handler:^(__kindof UIAction* a) {
+        (void)a;
+        NSUserDefaults* d = [NSUserDefaults standardUserDefaults];
+        [d setBool:![d boolForKey:@BW_SIMULATION_60HZ_KEY] forKey:@BW_SIMULATION_60HZ_KEY];
+        [weakSelf refreshMenu];
+        UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Applies at Next Launch"
+            message:@"Targets 60 full game updates per second. Needs more CPU power and may run slowly. Timing fixes are incomplete; dialogues, cutscenes and transitions keep their original timing."
+            preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[weakSelf actionTitled:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        [weakSelf presentAlert:alert];
+    }];
+    simulation.state = [defaults boolForKey:@BW_SIMULATION_60HZ_KEY] ? UIMenuElementStateOn : UIMenuElementStateOff;
+    simulation.subtitle = @"Next launch; more demanding on your device";
+    if (!bluewake_simulation_supported()) {
+        simulation.attributes = UIMenuElementAttributesDisabled;
+        simulation.subtitle = @"Rebuild your personal game module to enable";
+    }
     UIMenu* displayMenu = [UIMenu menuWithTitle:@"Display" image:[UIImage systemImageNamed:@"display"]
                                      identifier:nil options:0
-                                       children:@[ showFPS, smoothMotion, resolutionMenu, filteringMenu, aspectMenu ]];
+                                       children:@[ showFPS, simulation, smoothMotion, resolutionMenu, filteringMenu, aspectMenu ]];
 
     // Controller: camera stick direction and face-button mapping.
     UIAction* (^toggle)(NSString*, const char*) = ^UIAction*(NSString* title, const char* key) {

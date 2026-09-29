@@ -49,6 +49,9 @@ extern "C" {
 void bluewake_mouse_camera_configure(bool enabled, double sensitivity, bool invert_y);
 void bluewake_mouse_camera_block(bool blocked);
 bool bluewake_mouse_camera_captured(void);
+// runtime/host/src/simulation_mode.h: the experimental 60 Hz gameplay.
+bool bluewake_simulation_supported(void);
+bool bluewake_simulation_enabled(void);
 const char* bluewake_game_options_describe(uint32_t position, const char** title, bool* default_on, bool* on);
 }
 
@@ -82,6 +85,7 @@ struct Settings {
     bool betterww = false;
     std::map<std::string, bool> options;  // only those changed from their default
     bool hd_textures = false;
+    bool native_60hz = false;  // experimental 60 Hz gameplay (docs/SIMULATION_60HZ.md)
     bool lle_audio = false;
 };
 
@@ -142,6 +146,7 @@ void load_file() {
         else if (k.rfind("option.", 0) == 0) d.options[k.substr(7)] = parse_bool(v);
         else if (k == "hd_textures") d.hd_textures = parse_bool(v);
         else if (k == "lle_audio") d.lle_audio = parse_bool(v);
+        else if (k == "native_60hz") d.native_60hz = parse_bool(v);
     }
     std::fclose(f);
 }
@@ -165,6 +170,7 @@ void save_file() {
     std::fprintf(f, "controller_invert_x=%d\ncontroller_invert_y=%d\n", d.pad_invert_x, d.pad_invert_y);
     std::fprintf(f, "aspect=%s\nkeep_aspect=%d\nbetterww=%d\nhd_textures=%d\nlle_audio=%d\n", d.aspect.c_str(),
                  d.keep_aspect, d.betterww, d.hd_textures, d.lle_audio);
+    std::fprintf(f, "native_60hz=%d\n", d.native_60hz);
     for (const auto& [name, on] : d.options)
         std::fprintf(f, "option.%s=%d\n", name.c_str(), on);
     const bool ok = std::fclose(f) == 0;
@@ -317,7 +323,8 @@ void apply_live() {
     const Settings& d = g_saved;
     aurora_set_frame_buffer_scale(static_cast<float>(d.render_scale));
     aurora_set_forced_anisotropy(static_cast<unsigned>(d.anisotropy));
-    aurora_set_frame_interpolation(d.smooth_motion);
+    // 60 Hz gameplay draws every frame itself: no in-between frames.
+    aurora_set_frame_interpolation(d.smooth_motion && !bluewake_simulation_enabled());
     aurora_set_fps_overlay(d.show_fps);
     aurora_set_pause_on_focus_lost(d.pause_unfocused);
     bluewake_mouse_camera_configure(d.mouse_camera, d.mouse_sensitivity, d.mouse_invert_y);
@@ -370,7 +377,8 @@ void restart() {
 bool needs_restart() {
     const Settings &a = g_saved, &b = g_launched;
     return a.aspect != b.aspect || a.keep_aspect != b.keep_aspect || a.betterww != b.betterww ||
-           a.options != b.options || a.hd_textures != b.hd_textures || a.lle_audio != b.lle_audio;
+           a.options != b.options || a.hd_textures != b.hd_textures || a.lle_audio != b.lle_audio ||
+           a.native_60hz != b.native_60hz;
 }
 
 void restart_note(bool differs) {
@@ -385,11 +393,22 @@ void tab_display(SDL_Window* w) {
     bool full = w != nullptr && is_fullscreen(w);
     if (ImGui::Checkbox("Fullscreen   (F11 or Alt+Enter)", &full))
         set_fullscreen(w, full);
+    const bool native = bluewake_simulation_enabled();
+    ImGui::BeginDisabled(native);
     if (ImGui::Checkbox("Smooth Motion: 60 FPS   (F10)", &d.smooth_motion)) {
         aurora_set_frame_interpolation(d.smooth_motion);
         changed();
     }
-    ImGui::TextDisabled("    The renderer draws a blended frame between each of the game's 30.");
+    ImGui::EndDisabled();
+    ImGui::TextDisabled(native ? "    Off while 60 Hz gameplay runs: every frame is the game's own."
+                               : "    The renderer draws a blended frame between each of the game's 30.");
+    if (bluewake_simulation_supported()) {
+        if (ImGui::Checkbox("60 Hz gameplay (experimental)", &d.native_60hz))
+            changed();
+        restart_note(d.native_60hz != g_launched.native_60hz);
+        ImGui::TextDisabled("    The game itself runs 60 times a second. Movement, cutscenes and some");
+        ImGui::TextDisabled("    timers are still being converted (docs/SIMULATION_60HZ.md).");
+    }
     if (ImGui::Checkbox("Show the frame rate   (F9)", &d.show_fps)) {
         aurora_set_fps_overlay(d.show_fps);
         changed();
@@ -815,6 +834,10 @@ extern "C" void bw_settings_apply_launch(void) {
         env_default("DOL_AURORA_TEXTURE_PACK", texture_folder());
     if (d.lle_audio)
         env_default("BLUEWAKE_DSP_MODE", "lle");
+    if (env_set("BLUEWAKE_SIMULATION_60HZ"))
+        d.native_60hz = std::getenv("BLUEWAKE_SIMULATION_60HZ")[0] == '1';
+    else if (d.native_60hz)
+        env_default("BLUEWAKE_SIMULATION_60HZ", "1");
     if (d.fullscreen)
         env_default("DOL_AURORA_FULLSCREEN", "1");
     int width = d.window_w, height = d.window_h;
@@ -872,6 +895,8 @@ extern "C" int bw_settings_key(unsigned virtual_key, int alt) {
         g_toggle_fullscreen = true;
         return 1;
     case VK_F10:
+        if (bluewake_simulation_enabled())
+            return 1;  // 60 Hz gameplay has no in-between frames
         g_saved.smooth_motion = !aurora_get_frame_interpolation();
         aurora_set_frame_interpolation(g_saved.smooth_motion);
         changed();

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.19)
 project(bluewake_composite C)
 
 set(CMAKE_C_STANDARD 11)
@@ -60,6 +60,9 @@ message(STATUS "${NUM_CHUNKS} chunk translation units")
 add_library(${MODULE_NAME} SHARED
   module_export.c
   dispatch_loop.c
+  guest_cpu.c
+  direct_calls.c
+  gather_pipe.c
   ${GXRUNTIME_DIR}/src/core/cpu.c
   ${GXRUNTIME_DIR}/src/core/cpu_exception.c
   ${GXRUNTIME_DIR}/src/core/cpu_interpreter.c
@@ -70,7 +73,36 @@ add_library(${MODULE_NAME} SHARED
 
 set_target_properties(${MODULE_NAME} PROPERTIES PREFIX "" OUTPUT_NAME "${MODULE_NAME}" UNITY_BUILD OFF C_VISIBILITY_PRESET hidden)
 target_compile_definitions(${MODULE_NAME} PRIVATE MODULE_GAME_ID="${GAME_ID}" DOLRECOMP_CPU_HEADER="core/cpu.h")
-target_include_directories(${MODULE_NAME} PRIVATE "${COMPOSITE_DIR}" "${GXRUNTIME_DIR}/include" "${ABI_DIR}")
+target_include_directories(${MODULE_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${COMPOSITE_DIR}" "${GXRUNTIME_DIR}/include" "${ABI_DIR}")
+if(EXISTS "${COMPOSITE_DIR}/simulation_60hz.json")
+  file(READ "${COMPOSITE_DIR}/simulation_60hz.json" SIMULATION_MANIFEST)
+  string(JSON SIMULATION_ABI GET "${SIMULATION_MANIFEST}" abi)
+  if(NOT SIMULATION_ABI EQUAL 1)
+    message(FATAL_ERROR "Unsupported simulation timing manifest")
+  endif()
+  string(JSON TIMING_FILE_COUNT LENGTH "${SIMULATION_MANIFEST}" files)
+  if(TIMING_FILE_COUNT LESS 1)
+    message(FATAL_ERROR "Empty simulation timing manifest")
+  endif()
+  math(EXPR TIMING_LAST_FILE "${TIMING_FILE_COUNT} - 1")
+  foreach(INDEX RANGE 0 ${TIMING_LAST_FILE})
+    string(JSON TIMING_FILE MEMBER "${SIMULATION_MANIFEST}" files ${INDEX})
+    string(JSON TIMING_EXPECTED GET "${SIMULATION_MANIFEST}" files "${TIMING_FILE}")
+    file(SHA256 "${COMPOSITE_DIR}/${TIMING_FILE}" TIMING_ACTUAL)
+    if(NOT TIMING_ACTUAL STREQUAL TIMING_EXPECTED)
+      message(FATAL_ERROR "Timing source changed: rerun prepare_simulation_60hz.py (${TIMING_FILE})")
+    endif()
+  endforeach()
+  target_sources(${MODULE_NAME} PRIVATE simulation_timing.c)
+  target_compile_definitions(${MODULE_NAME} PRIVATE BLUEWAKE_SIMULATION_PATCHED=1)
+  if(WIN32)
+    # The host finds the timing API by name (simulation_mode.c).
+    foreach(EXPORTED_SYMBOL bluewake_composite_simulation_abi bluewake_composite_simulation_enable
+        bluewake_composite_simulation_stats)
+      target_link_options(${MODULE_NAME} PRIVATE "LINKER:/EXPORT:${EXPORTED_SYMBOL}")
+    endforeach()
+  endif()
+endif()
 if(APPLE)
   set_target_properties(${MODULE_NAME} PROPERTIES SUFFIX ".dylib")
 endif()

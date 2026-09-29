@@ -33,6 +33,8 @@ add_executable(bluewake_host
     src/game_options.c
     src/fast_load.c
     src/jump_button.c
+    src/settings_menu.cpp
+    src/simulation_mode.c
     src/sprint.c
     src/mouse_camera.c
     src/return_census.c
@@ -46,6 +48,10 @@ add_executable(bluewake_host
     src/rel_scratch_allocator.c
     src/scheduler_contract.c)
 target_link_libraries(bluewake_host PRIVATE gxruntime GXRuntime::aurora)
+# The options menu (settings_menu.cpp) draws with Aurora's Dear ImGui.
+if(TARGET imgui)
+    target_link_libraries(bluewake_host PRIVATE imgui)
+endif()
 set_target_properties(bluewake_host PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(bluewake_host PRIVATE
     ${GXRUNTIME_DIR}/include
@@ -144,6 +150,22 @@ target_include_directories(bluewake_composite_dispatch_loop_test PRIVATE
 )
 add_test(NAME bluewake_composite_dispatch_loop_test
     COMMAND bluewake_composite_dispatch_loop_test)
+
+add_executable(bluewake_simulation_timing_test
+    ../../tests/simulation_timing_test.c
+    ../../cmake/composite/simulation_timing.c)
+target_link_libraries(bluewake_simulation_timing_test PRIVATE gxruntime)
+target_include_directories(bluewake_simulation_timing_test PRIVATE
+    ${GXRUNTIME_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/composite)
+add_test(NAME bluewake_simulation_timing_test COMMAND bluewake_simulation_timing_test)
+
+add_executable(bluewake_inline_fp_test ../../tests/inline_fp_test.c)
+target_link_libraries(bluewake_inline_fp_test PRIVATE gxruntime)
+target_include_directories(bluewake_inline_fp_test PRIVATE
+    ${GXRUNTIME_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/composite)
+add_test(NAME bluewake_inline_fp_test COMMAND bluewake_inline_fp_test)
 
 add_executable(bluewake_fpu_context_test
     ../../tests/fpu_context_test.c

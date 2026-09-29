@@ -35,14 +35,27 @@ void bluewake_mouse_camera_retrace(void);
 // At every dispatch boundary (the chassis edge service): at camera_draw's
 // entry the frame's camera is final, and the mouse's view and zoom are
 // applied; at the player's update (daPy_Execute) the mouse's aim is.
-void bluewake_mouse_camera_dispatch(CPUState* cpu, u32 address);
+// It is called at every block boundary and acts at two addresses, so the test
+// is inline and the call only happens there (the call itself was about 2
+// percent of the game thread at 60 Hz).
+#define BLUEWAKE_MOUSE_CAMERA_DRAW_PC 0x8017C350u     // camera_draw__FP20camera_process_class
+#define BLUEWAKE_MOUSE_PLAYER_EXECUTE_PC 0x80122D30u  // daPy_Execute__FP9daPy_lk_c
+void bluewake_mouse_camera_enter(CPUState* cpu, u32 address);
+static inline void bluewake_mouse_camera_dispatch(CPUState* cpu, u32 address) {
+    if (__builtin_expect(address == BLUEWAKE_MOUSE_CAMERA_DRAW_PC || address == BLUEWAKE_MOUSE_PLAYER_EXECUTE_PC, 0))
+        bluewake_mouse_camera_enter(cpu, address);
+}
 // On every pad read, on channel 0's live state: left click is A.
 void bluewake_mouse_camera_pad(DolPadState* pad);
-// A settings menu (the Windows host's): turn the mouse camera on or off and
-// set its sensitivity and vertical direction, and hold it off while the menu
-// is open, so a click works the menu instead of taking the mouse. Main thread.
+// Whether the mouse is the camera now (Esc gives it back), and giving it back.
+bool bluewake_mouse_camera_captured(void);
+void bluewake_mouse_camera_release(void);
+// Reads BLUEWAKE_MOUSE_CAMERA, _SENSITIVITY and _INVERT_Y again (the options menu).
+void bluewake_mouse_camera_reload(void);
+// The Windows host's settings menu: turn the mouse camera on or off and set
+// its sensitivity and vertical direction, and hold it off while the menu is
+// open, so a click works the menu instead of taking the mouse. Main thread.
 void bluewake_mouse_camera_configure(bool enabled, double sensitivity, bool invert_y);
 void bluewake_mouse_camera_block(bool blocked);
-bool bluewake_mouse_camera_captured(void);
 
 #endif

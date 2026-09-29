@@ -22,6 +22,8 @@
 #include "game_options.h"
 #include "fast_load.h"
 #include "jump_button.h"
+#include "settings_menu.h"
+#include "simulation_mode.h"
 #include "sprint.h"
 #include "mouse_camera.h"
 #include "callback_delivery.h"
@@ -1292,6 +1294,10 @@ static void host_prepare_guest_dispatch(CPUState* cpu, void* user) {
 static const u8* g_overlap_slot_ptr;
 static const u8* g_overlap_fields_ptr;
 static u32 g_overlap_cached_object;
+// BLUEWAKE_OVERLAP_OBSERVATION=0 skips this observation. It is for the route
+// digest, which records the overlap phase; it never changes the guest, and a
+// player's session (the Windows app sets it) has no digest to record.
+static bool g_overlap_observation = true;
 // The guest-alias generation the cached slot pointer was resolved under. It
 // starts at a value the counter cannot hold so that the first call resolves,
 // which is what g_overlap_cache_valid used to do as a separate flag - one load
@@ -1359,7 +1365,7 @@ static bool host_chassis_edge_service_body(void* user, CPUState* cpu, u32 addres
     // in both configurations, so this is observation cadence and not guest
     // state. Sampling it here restores the shipping cadence, which is one look
     // per block boundary - the same call the chassis already makes.
-    if (g_name_scene_object >= 0x80000000u &&
+    if (g_overlap_observation && g_name_scene_object >= 0x80000000u &&
         (g_file_start_pulse.triggered || !g_file_start_pulse.configured)) {
 #if BLUEWAKE_EDGE_CENSUS
         g_edge_overlap_guard++;
@@ -1638,7 +1644,9 @@ static inline bool bw_search_leader(s64 downcount, s64 budget, s64 deadline,
     return remaining >= 0 && (u64)remaining >= (u64)cycles;
 }
 
-static void host_actor_search_native(CPUState* cpu) {
+// Out of line: inlined, its registers made every edge-service call save and
+// restore eight of them, on the path that runs at every block boundary.
+__attribute__((noinline)) static void host_actor_search_native(CPUState* cpu) {
     if (cpu->lr != BW_SEARCH_NDIT_RETURN || cpu->gpr[29] != BW_SEARCH_JUDGE_FILTER ||
         (cpu->ctr & ~3u) != BW_SEARCH_JUDGE_FILTER || cpu->gpr[30] != cpu->gpr[4] ||
         cpu->host_call != NULL || cpu->exception != 0u)
@@ -1736,7 +1744,7 @@ static bool host_chassis_edge_service(void* user, CPUState* cpu, u32 address) {
                              g_interrupt_sources_dirty,
                          0))
         return host_chassis_edge_service_full(user, cpu, address);
-    if (g_name_scene_object >= 0x80000000u &&
+    if (g_overlap_observation && g_name_scene_object >= 0x80000000u &&
         (g_file_start_pulse.triggered || !g_file_start_pulse.configured)) {
         if (g_ppc_guest_alias_generation != g_overlap_cached_alias_state ||
             g_overlap_slot_ptr == NULL)
@@ -4702,6 +4710,7 @@ static void host_sync_vi_cycles(CPUState* cpu) {
     dol_vi_clock_advance(g_cycle_vi_clock, elapsed_cycles);
     while (dol_vi_clock_pop_retrace(g_cycle_vi_clock, NULL)) {
         g_host_retrace_count++;
+        bluewake_simulation_retrace(g_host_retrace_count);
         aurora_backend_service_present();
         host_mods_reapply(cpu);
         bluewake_game_options_retrace(cpu);
@@ -5649,6 +5658,8 @@ static void host_apply_aspect(void) {
 }
 
 int main(int argc, char** argv) {
+    // The options menu's saved choices, before anything reads the environment.
+    bluewake_settings_load();
     host_apply_aspect();
     const char* host_root = host_resolve_root();
     char dylib_scratch[4096 + 128];
@@ -5698,6 +5709,7 @@ int main(int argc, char** argv) {
 
     void* lib = dlopen(dylib_path, RTLD_NOW | RTLD_LOCAL);
     if (!lib) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 1; }
+    if (!bluewake_simulation_init(lib)) { dlclose(lib); return 1; }
 
     GetModuleFn get_module = (GetModuleFn)dlsym(lib, "staticrecomp_get_module");
     if (!get_module) { fprintf(stderr, "dlsym: %s\n", dlerror()); return 1; }
@@ -5942,8 +5954,10 @@ int main(int argc, char** argv) {
         };
         if (dol_aurora_initialize(argc, argv, &aurora_config)) {
             aurora_enabled = true;
+            bluewake_simulation_renderer_ready();
             g_live_pad_enabled = true;
             bluewake_mouse_camera_install();
+            bluewake_settings_menu_install();
             fprintf(stderr, "[host] renderer=aurora window=%ux%u\n",
                     aurora_config.window_width, aurora_config.window_height);
         } else if (renderer_requested) {
@@ -5977,7 +5991,18 @@ int main(int argc, char** argv) {
     }
     atexit(bluewake_card_runtime_close);
 
-    CPUState cpu;
+    // The guest CPU's state: the module's own when it keeps one at a fixed
+    // address (cmake/composite/guest_cpu.c; the Windows build's translated
+    // code addresses it directly rather than through a pointer), else here.
+    CPUState cpu_storage;
+    CPUState* (*module_guest_cpu)(void) =
+        (CPUState* (*)(void))dlsym(lib, "bluewake_composite_guest_cpu");
+    CPUState* const cpu_state = module_guest_cpu != NULL ? module_guest_cpu() : &cpu_storage;
+    // For an outside sampler: the guest pc is at this address + offsetof(pc).
+    fprintf(stderr, "[host] guest cpu state %p (%s), pc at +%u\n", (void*)cpu_state,
+            module_guest_cpu != NULL ? "the module's" : "the host's", (unsigned)offsetof(CPUState, pc));
+    // `cpu` names that state for the rest of main (#undef after it).
+#define cpu (*cpu_state)
     if (!cpu_init(&cpu)) { fprintf(stderr, "cpu_init failed\n"); return 1; }
     DolViClock vi_clock;
     dol_vi_clock_init(&vi_clock);
@@ -6172,6 +6197,8 @@ int main(int argc, char** argv) {
     bluewake_cycle_domain_init(&g_cycle_domain, cycle_cap,
                                host_cycle_advance_clock,
                                host_cycle_deadline_distance, NULL);
+    if (bluewake_simulation_enabled())
+        bluewake_cycle_domain_set_cpu_multiplier(&g_cycle_domain, 2);
     if (cycle_dynamic_cap)
         bluewake_cycle_domain_set_dynamic_cap(&g_cycle_domain, 256, 1024u);
     bluewake_delivery_digest_init(&g_delivery_digest);
@@ -6512,6 +6539,10 @@ int main(int argc, char** argv) {
         const char* native = getenv("BLUEWAKE_ACTOR_SEARCH_NATIVE");
         g_actor_search_native = native == NULL || strcmp(native, "0") != 0;
     }
+    {
+        const char* overlap = getenv("BLUEWAKE_OVERLAP_OBSERVATION");
+        g_overlap_observation = overlap == NULL || strcmp(overlap, "0") != 0;
+    }
     g_boundary_census_enabled = getenv("BLUEWAKE_BOUNDARY_CENSUS") != NULL;
     if (g_boundary_census_enabled && getenv("BLUEWAKE_BOUNDARY_CENSUS_BY_ADDRESS") != NULL)
         g_boundary_by_address = calloc(BOUNDARY_ADDRESS_WORDS, sizeof(u32));
@@ -6531,6 +6562,37 @@ int main(int argc, char** argv) {
         getenv("BLUEWAKE_DELIVERY_SAFETY_CENSUS") != NULL;
     g_guest_state_trace_enabled =
         getenv("BLUEWAKE_GUEST_STATE_TRACE") != NULL;
+    // Direct calls between chunks (cmake/composite/direct_calls.h, the Windows
+    // builder's scripts/windows/direct_calls.py): at a call into another chunk
+    // the module skips the chassis loop when this host's edge service would
+    // have nothing to do, which it reads through these flags. Off in every
+    // mode that needs the service, or a turn, at each boundary, and with
+    // BLUEWAKE_DIRECT_CALLS=0.
+    {
+        typedef int (*DirectCallsFn)(bool, const bool*, const bool*, const u32*, const u32*);
+        DirectCallsFn direct_calls = (DirectCallsFn)dlsym(lib, "bluewake_composite_direct_calls");
+        const char* direct_env = getenv("BLUEWAKE_DIRECT_CALLS");
+        const bool want = (direct_env == NULL || strcmp(direct_env, "0") != 0) &&
+                          getenv("BLUEWAKE_PER_BLOCK_TURNS") == NULL &&
+                          !g_chassis_service_each_block && !g_turn_census_enabled &&
+                          !g_boundary_census_enabled && !g_overlap_observation &&
+                          !g_deadline_census_enabled && !g_delivery_safety_census_enabled &&
+                          !g_guest_state_trace_enabled;
+        if (direct_calls != NULL)
+            fprintf(stderr, "[chassis] direct-calls=%s\n",
+                    direct_calls(want, &g_interrupt_sources_dirty, &g_guest_decrementer_pending,
+                                 &g_interrupts.pi_cause, &g_interrupts.pi_mask)
+                        ? "on"
+                        : "off");
+    }
+    // Gather-pipe stores straight to the GX writer (cmake/composite/gather_pipe.h):
+    // host_mmio_write does nothing else for them unless the FIFO trace is on.
+    {
+        typedef void (*SetGatherPipeFn)(void (*)(u64, u8));
+        SetGatherPipeFn set_gather_pipe = (SetGatherPipeFn)dlsym(lib, "bluewake_composite_set_gather_pipe");
+        if (set_gather_pipe != NULL)
+            set_gather_pipe(g_gx_fifo_trace ? NULL : dol_platform_gx_write);
+    }
 #ifdef BLUEWAKE_HAS_DSP_ADAPTER
     {
         const char* dsp_rate_env = getenv("BLUEWAKE_DSP_RATE");
@@ -14454,3 +14516,4 @@ int main(int argc, char** argv) {
     cpu_free(&cpu);
     return stop_reason ? 1 : 0;
 }
+#undef cpu

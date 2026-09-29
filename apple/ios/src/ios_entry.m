@@ -150,6 +150,8 @@ int main(int argc, char** argv) {
         // The console clock: saves carry the real local date and time (the
         // file select shows it) instead of 01/01/2000.
         bw_default("BLUEWAKE_CLOCK", @"now");
+        bw_default("BLUEWAKE_SIMULATION_60HZ",
+                   [[NSUserDefaults standardUserDefaults] boolForKey:@BW_SIMULATION_60HZ_KEY] ? @"1" : @"0");
         // The shell's aspect choice (BWGameOverlay.mm) applies at launch:
         // 0 keeps the original 4:3 picture, 1 fills the screen.
         if ([[NSUserDefaults standardUserDefaults] integerForKey:@"BlueWake.AspectMode"] == 1)

@@ -4,10 +4,16 @@
 #include "generated_composite.h"
 #include "StaticRecompABI.h"
 #include "dispatch_loop.h"
+#ifdef BLUEWAKE_SIMULATION_PATCHED
+#include "simulation_timing.h"
+#endif
 
 extern void ppc_set_mem_write_journal(PPCMemWriteJournal fn, void* user);
 
 unsigned dolrecomp_call_depth = 0;
+/* The chunk table for the chunks' direct calls (direct_calls.h): calling
+ * through it, a call reaches the mods' variants as a dispatch does. */
+void (**const bw_chunk_fns)(CPUState*) = s_dolrecomp_chunk_fns;
 static BluewakeEdgeServiceFn s_edge_service;
 static void* s_edge_service_user;
 
@@ -71,6 +77,9 @@ static int chassis_dispatch(CPUState* ctx, u32 address)
 static void chassis_on_state_loaded(CPUState* ctx)
 {
     ppc_fpscr_updated(ctx);
+#ifdef BLUEWAKE_SIMULATION_PATCHED
+    bluewake_simulation_reset();
+#endif
 }
 
 #include "module_tables.inc"

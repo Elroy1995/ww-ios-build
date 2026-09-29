@@ -80,15 +80,20 @@ static unsigned long long now_us(clockid_t clock) {
     return (unsigned long long)ts.tv_sec * 1000000ull + (unsigned long long)ts.tv_nsec / 1000ull;
 }
 
-void bluewake_fast_load_attach(CPUState* cpu) {
-    g_cpu = cpu;
+void bluewake_fast_load_reload(void) {
     const char* fade = getenv("BLUEWAKE_FADE_FRAMES");
+    g_fade_frames = 6u;
     if (fade != NULL && fade[0] != '\0') {
         const long frames = strtol(fade, NULL, 10);
         g_fade_frames = frames <= 0 || frames >= kGameFade ? 0u : (unsigned)frames;
     }
     const char* ff = getenv("BLUEWAKE_FAST_FORWARD");
     g_ff_enabled = ff == NULL || ff[0] != '0';
+}
+
+void bluewake_fast_load_attach(CPUState* cpu) {
+    g_cpu = cpu;
+    bluewake_fast_load_reload();
     const char* trace = getenv("BLUEWAKE_LOAD_TRACE");
     g_trace = trace != NULL && trace[0] == '1';
     const char* warp = getenv("BLUEWAKE_TEST_WARP");
