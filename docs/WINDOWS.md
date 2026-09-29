@@ -117,27 +117,36 @@ BlueWake remembers where you left it, its size, and whether it was fullscreen.
 Game controllers work through SDL (Xbox, PlayStation, Switch Pro and others). The title screen wants A to reach
 the file menu. The mouse turns the game's own camera around Link and tilts it, and a left click is A; in first
 person and when aiming an item it aims instead; a cutscene, door or Z-target takes the camera back. Scene
-changes are quick: the fades are short and the black between them runs as fast as the PC can.
+changes are quick: the fades are short and the black between them runs as fast as the PC can, and through a door
+with a knob Link skips the walk-in and the door closing behind him (both can be turned off in the Mods tab).
 
 **Settings.** F1 opens the settings over the game (it keeps running underneath; the keyboard and mouse work the
 menu until you close it):
 
-- *Display*: fullscreen, Smooth Motion, the frame rate counter, the render resolution (the window's own pixels,
-  or 1x to 4x the GameCube's 480 lines), texture filtering (up to 16x anisotropic), keeping the picture's shape,
-  pausing while the window is in the background, and putting the window back in the middle.
+- *Display*: fullscreen, Smooth Motion (off, 60 or 120 FPS), 60 Hz gameplay (experimental; see below), the
+  frame rate counter, the render resolution (the window's own pixels, or 1x to 4x the GameCube's 480 lines),
+  texture filtering (up to 16x anisotropic), keeping the picture's shape, pausing while the window is in the
+  background, and putting the window back in the middle.
 - *Controls*: the mouse camera, its sensitivity and vertical direction, the controller's camera stick
   directions, and the keyboard layout.
-- *Mods*: 4:3, 16:10 or 16:9, Better Wind Waker and each of its options, and an HD texture pack (a
-  Dolphin-format pack for GZLE01, in the folder the menu opens).
+- *Mods*: 4:3, 16:10 or 16:9, Better Wind Waker and each of its options, quick doors, skipping through the
+  black while loading, and an HD texture pack (a Dolphin-format pack for GZLE01, in the folder the menu opens).
 - *Sound and files*: fast (Dolphin's high-level) or exact (the DSP's own program) sound, and your files.
 
 Display and control settings apply at once. The mods and the sound mode are compiled paths chosen when the game
 starts, so those marked `*` apply when BlueWake starts again; **Restart now** does that. Everything is saved to
 `%APPDATA%\BlueWake\settings.ini`.
 
-**Smooth Motion** is on by default: the renderer draws a blended frame between each of the game's 30, so the
-game shows 60 frames a second (F9's counter reads `60 FPS (game 30)`). Scenes with nothing to blend (menus, the
-title, still shots) keep the same rhythm, so the picture's timing does not change when they begin or end.
+**Smooth Motion** is on by default at 60 FPS: the renderer draws a blended frame between each of the game's 30,
+so the game shows 60 frames a second (F9's counter reads `60 FPS (game 30)`). The menu can also choose 120 FPS
+(three in-between frames each, for a 120 Hz display) or turn it off; F10 turns it off and back on. Scenes with
+nothing to blend (menus, the title, still shots) keep the same rhythm, so the picture's timing does not change
+when they begin or end.
+
+**60 Hz gameplay** (off by default, experimental) runs the game itself 60 times a second instead of blending
+frames; Smooth Motion is off while it runs. It needs a fast CPU (see
+[status/WINDOWS_NATIVE_60HZ_2026-09-29.md](status/WINDOWS_NATIVE_60HZ_2026-09-29.md)), and some timing is not
+converted yet ([SIMULATION_60HZ.md](SIMULATION_60HZ.md)). It applies when BlueWake starts again.
 
 Command-line options (`BlueWake.exe --help`) choose for one session; they win over the settings file:
 
@@ -145,7 +154,9 @@ Command-line options (`BlueWake.exe --help`) choose for one session; they win ov
 | --- | --- |
 | `--widescreen` | 16:9: the widescreen mod (a wider camera, culling and HUD) with a 16:9 picture |
 | `--aspect 16:10` | 16:10 instead (`4:3` is the game's own) |
-| `--smooth`, `--no-smooth` | Smooth Motion on (the default) or off (the game's own 30 FPS) |
+| `--smooth`, `--no-smooth` | Smooth Motion at 60 FPS (the default) or off (the game's own 30 FPS) |
+| `--120` | Smooth Motion at 120 FPS, for a 120 Hz display |
+| `--60hz`, `--30hz` | Experimental 60 Hz gameplay on or off |
 | `--betterww` | Better Wind Waker's settings at their defaults (Swift Sail, instant text, faster climbing...) |
 | `--options LIST` | Change them: `name,-name,...`, or `none,name,...` (names in `mods/betterww/options.txt`) |
 | `--fullscreen` | Start in fullscreen |

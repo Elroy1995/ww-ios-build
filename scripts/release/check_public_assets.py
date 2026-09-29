@@ -16,7 +16,7 @@ import tempfile
 import zipfile
 
 FORBIDDEN = re.compile(
-    r"(?:^|/)(?:gGZLE01_recomp\.dylib|[^/]*\.(?:iso|gcm|rvz|wbfs|wia|ciso|gcz|nfs|dol|rel|"
+    r"(?:^|/)(?:gGZLE01_recomp\.(?:dylib|dll|pdb)|[^/]*\.(?:iso|gcm|rvz|wbfs|wia|ciso|gcz|nfs|dol|rel|"
     r"card|gci|sav|raw|p12|mobileprovision|provisionprofile|profraw))$", re.I)
 
 
