@@ -1,0 +1,78 @@
+From 26611bd5f30eb684dc19eb5ecf48029cad5e3e69 Mon Sep 17 00:00:00 2001
+From: elliotttate <elliotttate@gmail.com>
+Date: Tue, 29 Sep 2026 11:49:09 -0400
+Subject: [PATCH] gxcore: merged draws' indices written from the draw, never
+ read back
+
+rebase_indices_u16 read each merged draw's indices back out of the frame's
+staging memory to add the base. That memory is a mapped GPU buffer, which
+Direct3D 12 maps write-combined: every read was uncached, and the rebase
+took 31 percent of the translation worker at native 60 Hz on Windows,
+enough to hold the game thread at 91 percent busy. It now writes source +
+base from the plan's own indices, only writing the staging memory.
+---
+ GXRuntime/graphics/aurora/lib/gfx/common.cpp   | 18 +++++++++++-------
+ GXRuntime/graphics/aurora/lib/gfx/common.hpp   |  2 +-
+ .../graphics/aurora/lib/gfx/gxcore_draw.cpp    |  2 +-
+ 3 files changed, 13 insertions(+), 9 deletions(-)
+
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/common.cpp b/GXRuntime/graphics/aurora/lib/gfx/common.cpp
+index 7137f386..e9a74d95 100644
+--- a/GXRuntime/graphics/aurora/lib/gfx/common.cpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/common.cpp
+@@ -2188,15 +2188,19 @@ Range push_indices(const uint8_t* data, size_t length, size_t alignment) {
+   return push(current_frame_packet().indices, data, length, alignment);
+ }
+ 
+-void rebase_indices_u16(Range range, uint16_t base) {
++// Writes source + base over an index range already pushed from source. Only
++// writes: the frame's staging memory is a mapped GPU buffer, write-combined on
++// Direct3D 12, where reading each index back cost an uncached read - a third
++// of the translation worker at native 60 Hz.
++void rebase_indices_u16(Range range, const uint16_t* source, uint16_t base) {
+   auto& bytes = current_frame_packet().indices;
+   CHECK(range.offset + range.size <= bytes.size() && range.size % 2 == 0, "Invalid index rebase range");
+-  for (uint32_t offset = range.offset; offset < range.offset + range.size; offset += 2) {
+-    uint16_t value;
+-    std::memcpy(&value, bytes.data() + offset, 2);
+-    CHECK(uint32_t(value) + base <= 65535u, "Merged index overflow");
+-    value += base;
+-    std::memcpy(bytes.data() + offset, &value, 2);
++  uint8_t* const destination = bytes.data() + range.offset;
++  const uint32_t count = range.size / 2;
++  for (uint32_t i = 0; i < count; ++i) {
++    CHECK(uint32_t(source[i]) + base <= 65535u, "Merged index overflow");
++    const uint16_t value = static_cast<uint16_t>(source[i] + base);
++    std::memcpy(destination + 2u * i, &value, 2);
+   }
+ }
+ 
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/common.hpp b/GXRuntime/graphics/aurora/lib/gfx/common.hpp
+index 10020a7b..630b44da 100644
+--- a/GXRuntime/graphics/aurora/lib/gfx/common.hpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/common.hpp
+@@ -299,7 +299,7 @@ static Range push_verts(ArrayRef<T> data, size_t alignment) {
+   return push_verts(reinterpret_cast<const uint8_t*>(data.data()), data.size() * sizeof(T), alignment);
+ }
+ Range push_indices(const uint8_t* data, size_t length, size_t alignment);
+-void rebase_indices_u16(Range range, uint16_t base);
++void rebase_indices_u16(Range range, const uint16_t* source, uint16_t base);
+ template <typename T>
+ static Range push_indices(ArrayRef<T> data, size_t alignment) {
+   return push_indices(reinterpret_cast<const uint8_t*>(data.data()), data.size() * sizeof(T), alignment);
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
+index da4a801d..9193de90 100644
+--- a/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/gxcore_draw.cpp
+@@ -1469,7 +1469,7 @@ bool submit_draw_plan(const gxc::DrawPlan& plan) {
+   // break adjacency through get_last_draw_command.
+   if (merge_enabled && previous && can_merge_draws(*previous, data)) {
+     const auto base = static_cast<uint16_t>(previous->vertRange.size / vertexStride);
+-    rebase_indices_u16(data.idxRange, base);
++    rebase_indices_u16(data.idxRange, plan.indices.data(), base);
+     previous->vertRange.size += data.vertRange.size;
+     previous->idxRange.size += data.idxRange.size;
+     previous->indexCount += data.indexCount;
+-- 
+2.45.2.windows.1
+
