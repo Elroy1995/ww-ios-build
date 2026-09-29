@@ -258,3 +258,53 @@ source-preparation drift/variant tests. CMake accepts the real native manifest
 and rejects a modified one. This local build configures `BUILD_TESTING=OFF`,
 so these results are from executing the test binaries directly, not CTest.
 Steady real-time 60 FPS and full-game timing compatibility remain unachieved.
+
+## Cached native dispatch follow-up
+
+The first native-math implementation checked its option and address range on
+every translated block. Native entries now resolve only on a miss in the
+existing program-counter cache. Ordinary cached blocks no longer pay that
+test, and native entries retain the translated fallback for unsupported input
+or nearby device deadlines. Configuration is fixed before the cache fills.
+The preparation manifest now includes the patched dispatch header.
+
+The actual rebuilt module passes 12,000 full CPU/RAM comparisons against the
+original module. Each of the three routines took 3,152 native paths and 848
+fallbacks in this run, including short deadlines, quantized loads, disabled
+FPU and NaNs. This supplements the direct helper test. CMake accepts the real
+dispatch header and rejects a changed header with stale certification.
+
+| Fixed-input Outset, headless, retraces 1800–2600 | Updates/sec | Mean / p95 interval | Whole-process instructions | Whole-process CPU cycles |
+| --- | ---: | ---: | ---: | ---: |
+| Native math disabled | 41.03 | 24.37 / 26.22 ms | 717.47 billion | 182.27 billion |
+| Cached native math enabled | 43.31 | 23.09 / 24.64 ms | 670.60 billion | 174.73 billion |
+| Cached native math plus private collision-block prototype | 42.16 | 23.72 / 25.54 ms | 666.50 billion | 177.09 billion |
+
+These sequential desktop runs used the same candidate module, fixed test
+input and no active profiler. Native math alone reduced total process
+instructions by about 6.5% and cycles by 4.1% in this pair; its measured
+throughput increased 5.6%. This is a promising local result, not a controlled
+thermal benchmark or rendered-game acceptance. The private prototype removed
+some precise-resumption branches while retaining deadline fallbacks. Although
+it passed 20,480 synthetic CPU/RAM comparisons, adding it did not improve
+this frame-rate comparison. It remains an unpublished experiment, disabled
+for the rendered native-math follow-up.
+
+The subsequent rendered Fortress pair measured **36.38 FPS disabled versus
+35.31 FPS enabled** (mean/p95: 27.49/29.08 ms versus 28.32/29.77 ms). All 52
+player-state records matched and both reported 14,369 draws in the measured
+view. Whole-process instructions fell from 1,558.41 to 1,527.81 billion, while
+cycles rose from 371.61 to 374.63 billion. Thus the headless improvement does
+**not** establish a reliable rendered Fortress speedup. Keep the optimization
+optional; it does not meet the 60 FPS target.
+
+The longer Fortress stability run completed 12,000 retraces (327 seconds)
+without the earlier graphics crash, using the cache-lock fix and native math.
+That is limited stability evidence, not proof of the crash's original cause
+or steady 60 FPS.
+
+[The Dusklight comparison](DUSKLIGHT_OPTIMIZATION_COMPARISON_2026-09-29.md)
+identifies native whole-routine execution, earlier dirty-state caching, adjacent
+draw merging and GPU vertex decoding as useful directions. Dusklight's own
+simulation remains 30 Hz with interpolated presentation; its higher rendered
+frame rate does not supply the missing gameplay timing conversion.

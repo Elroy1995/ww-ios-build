@@ -23,6 +23,7 @@ class CertificationTest(unittest.TestCase):
         prepare.LEAVES = ((0x100, 0x104, '00000100', self.expected),)
         self.file = self.root / 'chunk_00000100.c'
         self.file.write_text(self.source)
+        (self.root / "generated_composite.h").write_text(prepare.TYPE + prepare.CACHE)
 
     def tearDown(self):
         prepare.LEAVES = self.old_leaves
@@ -40,6 +41,13 @@ class CertificationTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             prepare.prepare(self.root)
         self.assertEqual(manifest, (self.root / 'native_math.json').read_bytes())
+
+    def test_modified_dispatcher(self):
+        prepare.prepare(self.root)
+        header = self.root / "generated_composite.h"
+        header.write_text(header.read_text().replace('return native;', 'return NULL;'))
+        with self.assertRaises(ValueError):
+            prepare.prepare(self.root)
 
     def test_missing_function(self):
         self.file.write_text('/* unavailable translation */\n')

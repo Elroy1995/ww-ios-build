@@ -17,6 +17,23 @@ LEAVES = (
 )
 
 
+DECLARATION = """// BlueWake native math entries are resolved only on a PC-cache miss.
+#define BLUEWAKE_NATIVE_MATH_CACHED 1
+static DolRecompFunction bluewake_native_math_find(u32 address);
+"""
+LOOKUP = """    DolRecompFunction native = bluewake_native_math_find(address);
+    if (native) {
+        s_cached_pc[cache_index] = address;
+        s_cached_pc_fn[cache_index] = native;
+        return native;
+    }
+"""
+TYPE = 'typedef void (*DolRecompFunction)(CPUState* ctx);\n'
+CACHE = """    if (s_cached_pc[cache_index] == address)
+        return s_cached_pc_fn[cache_index];
+"""
+
+
 def prepare(root):
     files = {}
     for start, end, chunk, expected in LEAVES:
@@ -33,11 +50,24 @@ def prepare(root):
             if hashlib.sha256(body.encode()).hexdigest() != expected:
                 raise ValueError(f'changed SDK function {start:08X} in {path}; native math not certified')
             files[str(path.relative_to(root))] = hashlib.sha256(path.read_bytes()).hexdigest()
+    header = root / 'generated_composite.h'
+    source = header.read_text()
+    if 'BLUEWAKE_NATIVE_MATH_CACHED' in source:
+        if source.count(DECLARATION) != 1 or source.count(LOOKUP) != 1:
+            raise ValueError('modified native math dispatch hook')
+    else:
+        if source.count(TYPE) != 1 or source.count(CACHE) != 1:
+            raise ValueError('unsupported composite dispatcher')
+        source = source.replace(TYPE, TYPE + DECLARATION)
+        source = source.replace(CACHE, CACHE + LOOKUP)
+    # Finish validation before changing the header or its certification.
+    header.write_text(source)
+    files[header.name] = hashlib.sha256(header.read_bytes()).hexdigest()
     manifest = root / 'native_math.json'
     temporary = manifest.with_suffix('.json.tmp')
     temporary.write_text(json.dumps({'abi': 1, 'files': files}, indent=2) + '\n')
     temporary.replace(manifest)
-    print(f'native math: {len(LEAVES)} SDK leaves verified across {len(files)} translated chunks')
+    print(f'native math: {len(LEAVES)} SDK leaves verified across {len(files)} source files')
 
 
 if __name__ == '__main__':

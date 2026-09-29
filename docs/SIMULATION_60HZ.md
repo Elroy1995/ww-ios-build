@@ -126,12 +126,21 @@ The builder runs `scripts/mods/prepare_native_math.py` before compiling. For a
 manual composite build, run that script on the generated source folder first;
 CMake verifies its hashes. Edited SDK bodies or variants must be reviewed and
 recertified rather than silently running a replacement for different code.
+Preparation also installs the native entries in the existing dispatch cache;
+the option is fixed when the module is first opened. Changing it requires a
+restart. The generated dispatch header is included in certification.
 
 Build `bluewake_native_math_test` and pass the path to an **unoptimized personal
 module** for full CPU-state and memory comparisons. No disc contents or
 translated bodies are included in the test. An optional second argument
 `--bench` compares isolated leaf throughput; that result does not establish
 whole-game performance.
+
+To exercise the module's actual native dispatch and fallback paths as well,
+pass `--candidate PATH_TO_REBUILT_MODULE` after the unoptimized module path.
+The test loads separate original/candidate modules, compares 12,000 complete
+CPU/RAM results and includes forced device-deadline, quantization, disabled-FPU
+and NaN fallbacks. The exit counters confirm how many native entries ran.
 
 For reproducible rendered routes, `BLUEWAKE_TEST_INPUT_ONLY=1` disables physical
 controller, keyboard/mouse controls and the settings shortcut in that test

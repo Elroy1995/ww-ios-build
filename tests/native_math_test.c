@@ -59,11 +59,22 @@ int main(int argc,char**argv) {
     c.gpr[5]=0x80003000;c.gpr[1]=0x803F6720;unchanged(&c,c.pc);
     puts("native math: fallback leaves state unchanged");
     if(argc<2) {free(a);free(b);return 0;}
+    setenv("BLUEWAKE_NATIVE_MATH","0",1);
     void* lib=dlopen(argv[1],RTLD_NOW|RTLD_LOCAL);
     if(!lib){fprintf(stderr,"%s\n",dlerror());return 1;}
     StaticRecompGetModuleFn get=(StaticRecompGetModuleFn)dlsym(lib,STATICRECOMP_GET_MODULE_SYMBOL);
     assert(get);const StaticRecompModuleDesc* mod=get();
     assert(mod->cpu_state_size==sizeof c && strcmp(mod->game_id,"GZLE01")==0);
+    void* candidate_lib=NULL;
+    const StaticRecompModuleDesc* candidate=NULL;
+    if(argc>3 && strcmp(argv[2],"--candidate")==0) {
+        setenv("BLUEWAKE_NATIVE_MATH","1",1);
+        candidate_lib=dlopen(argv[3],RTLD_NOW|RTLD_LOCAL);
+        assert(candidate_lib && candidate_lib!=lib);
+        StaticRecompGetModuleFn candidate_get=(StaticRecompGetModuleFn)dlsym(candidate_lib,STATICRECOMP_GET_MODULE_SYMBOL);
+        assert(candidate_get);candidate=candidate_get();
+        assert(candidate->cpu_state_size==sizeof c && strcmp(candidate->game_id,"GZLE01")==0);
+    }
     const u32 entries[]={0x8030D0C8,0x8030D0FC,0x8030DA44};
     for(unsigned fn=0;fn<3;++fn) for(unsigned i=0;i<4000;++i) {
         memset(a,0,0x10000);c=initial(a,entries[fn]);
@@ -73,12 +84,17 @@ int main(int argc,char**argv) {
         if(i%4==0) c.cycle_deadline_budget=0;
         if(i%4==1) c.cycle_deadline_budget=17+(fn==0?13:fn==1?51:21);
         if(fn==2 && i%7==0) c.ps1[6]=c.ps1[12]=NAN;
+        if(candidate && i%13==0) c.cycle_deadline_budget=18;
+        if(candidate && i%17==0) c.gqr[0]=0x040004;
+        if(candidate && i%19==0) c.msr=0;
+        if(candidate && i%23==0) write_float(&c,c.gpr[3],NAN);
         memcpy(b,a,0x10000);memcpy(b+0x3F66F0,a+0x3F66F0,8);
         CPUState reference=c;reference.ram=b;
         mod->on_state_loaded(&reference);
         assert(mod->dispatch(&reference,reference.pc));
         ppc_fpscr_updated(&c);
-        assert(bluewake_native_math(&c,c.pc));
+        if(candidate) assert(candidate->dispatch(&c,c.pc));
+        else assert(bluewake_native_math(&c,c.pc));
         reference.ram=a;
         if(memcmp(&c,&reference,sizeof c) || memcmp(a,b,0x10000)) {
             fprintf(stderr,"mismatch function %08x case %u seed %08x\n",entries[fn],i,seed);
@@ -108,5 +124,6 @@ int main(int argc,char**argv) {
             }
         }
     }
+    if(candidate_lib) dlclose(candidate_lib);
     dlclose(lib);free(a);free(b);return 0;
 }
