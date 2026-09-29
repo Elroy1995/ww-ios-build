@@ -617,7 +617,9 @@ int main(void) {
         call across chunks without the chassis loop where the host has nothing
         to do (scripts/windows/direct_calls.py), run J3DModel::calcWeightEnvelopeMtx
         natively where its translation is the verified one
-        (scripts/windows/native_skin.py), then the opt-in 60 Hz
+        (scripts/windows/native_skin.py), give every block a copy without the
+        per-instruction machinery for when it has prepaid its cycles
+        (scripts/windows/fast_blocks.py), then the opt-in 60 Hz
         gameplay's timing sites (docs/SIMULATION_60HZ.md; off unless asked
         for), whose manifest hashes the chunks as they end up. Each leaves a
         finished chunk as it is."""
@@ -626,11 +628,12 @@ int main(void) {
         self.run("chunk-headers", [sys.executable, ROOT / "scripts/windows/chunk_headers.py", root])
         self.run("direct-calls", [sys.executable, ROOT / "scripts/windows/direct_calls.py", root])
         self.run("native-skin", [sys.executable, ROOT / "scripts/windows/native_skin.py", root])
+        self.run("fast-blocks", [sys.executable, ROOT / "scripts/windows/fast_blocks.py", root])
         self.run("simulation-prepare", [sys.executable, ROOT / "scripts/mods/prepare_simulation_60hz.py", root])
         # Last: its manifest hashes whole chunk files, as they end up.
         self.run("native-math", [sys.executable, ROOT / "scripts/mods/prepare_native_math.py", root])
-        for name in ("guest-cpu", "gpr-inline", "chunk-headers", "direct-calls", "native-skin", "simulation-prepare",
-                     "native-math"):
+        for name in ("guest-cpu", "gpr-inline", "chunk-headers", "direct-calls", "native-skin", "fast-blocks",
+                     "simulation-prepare", "native-math"):
             print((self.logs / f"{name}.log").read_text(errors="replace").strip().splitlines()[-1])
 
     def finish_in_place(self):
@@ -753,7 +756,7 @@ int main(void) {
         # chunk is one function, so a step that changes that shape leaves the
         # old counts matching nothing.
         for name in ("global_guest_cpu.py", "inline_save_restore_gpr.py", "chunk_headers.py", "direct_calls.py",
-                     "native_skin.py"):
+                     "native_skin.py", "fast_blocks.py"):
             path = ROOT / "scripts/windows" / name
             key.update(path.relative_to(ROOT).as_posix().encode())
             key.update(path.read_bytes())
