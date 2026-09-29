@@ -232,7 +232,7 @@ def main():
                 owner.setdefault(start, []).append(name)
                 suffix = "__mod_" + name
                 target = dest / (chunk_dir.name + "__" + variant.name)
-                target.write_text(FUNC_RE.sub(lambda g: g.group(0) + suffix, text))
+                target.write_text(FUNC_RE.sub(lambda g: g.group(0) + suffix, text), newline=chr(10))
                 fn = "func_%08X%s" % (start, suffix)
                 decls.append("void %s(CPUState* ctx);" % fn)
                 if start in base_ranges:
@@ -275,7 +275,7 @@ def main():
                 start = int(m.group(1), 16)
                 suffix = "__mod_" + "_".join(members)
                 (dest / (chunk_dir.name + "__" + variant.name)).write_text(
-                    FUNC_RE.sub(lambda g: g.group(0) + suffix, text))
+                    FUNC_RE.sub(lambda g: g.group(0) + suffix, text), newline=chr(10))
                 fn = "func_%08X%s" % (start, suffix)
                 decls.append("void %s(CPUState* ctx);" % fn)
                 chunks.append((mask, start, fn))
@@ -334,7 +334,7 @@ def main():
         lines.append("#define MODULE_OPTION_WRITE_COUNT %du" % len(option_writes))
         lines.append(OPTION_EXPORTS)
         print("options: %d, %d writes" % (len(spec.options), len(option_writes)))
-    (out / "mod_variants.inc").write_text("\n".join(lines) + "\n")
+    (out / "mod_variants.inc").write_text("\n".join(lines) + "\n", newline=chr(10))
 
 
 if __name__ == "__main__":

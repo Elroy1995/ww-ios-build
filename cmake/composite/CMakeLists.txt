@@ -74,7 +74,30 @@ target_include_directories(${MODULE_NAME} PRIVATE "${COMPOSITE_DIR}" "${GXRUNTIM
 if(APPLE)
   set_target_properties(${MODULE_NAME} PROPERTIES SUFFIX ".dylib")
 endif()
-target_link_libraries(${MODULE_NAME} PRIVATE m)
+if(WIN32)
+  # A DLL exports only what is marked dllexport. module_export.c marks its own
+  # entry points; the guest-alias and write-journal hooks the host resolves in
+  # the runtime embedded here (GXRuntime cpu.c) are named for the linker.
+  foreach(EXPORTED_SYMBOL
+      ppc_set_mem_write_journal ppc_guest_alias_clear ppc_guest_alias_add
+      ppc_guest_alias_add_shared ppc_guest_alias_get_storage
+      ppc_guest_alias_remove ppc_guest_alias_resolve)
+    target_link_options(${MODULE_NAME} PRIVATE "LINKER:/EXPORT:${EXPORTED_SYMBOL}")
+  endforeach()
+  target_compile_definitions(${MODULE_NAME} PRIVATE _CRT_SECURE_NO_WARNINGS)
+  # The Windows C runtime's getenv is slow, and the embedded runtime checks a
+  # trace switch on every guest exception: remember each call site's answer
+  # (windows/compat/bw_getenv_cache.h). Only these sources, whose every getenv
+  # names a literal; the translated chunks never call it.
+  set_property(SOURCE module_export.c dispatch_loop.c
+      ${GXRUNTIME_DIR}/src/core/cpu.c ${GXRUNTIME_DIR}/src/core/cpu_exception.c
+      ${GXRUNTIME_DIR}/src/core/cpu_interpreter.c ${GXRUNTIME_DIR}/src/core/cpu_interpreter_table.c
+      ${GXRUNTIME_DIR}/src/core/cpu_interpreter_float.c ${GXRUNTIME_DIR}/src/core/cpu_interpreter_integer.c
+      APPEND PROPERTY COMPILE_OPTIONS
+      -include "${CMAKE_CURRENT_SOURCE_DIR}/../../windows/compat/bw_getenv_cache.h")
+else()
+  target_link_libraries(${MODULE_NAME} PRIVATE m)
+endif()
 target_compile_options(${MODULE_NAME} PRIVATE -O${COMPOSITE_OPTIMIZATION_LEVEL} -ffp-contract=off)
 
 if(COMPOSITE_OPTIMIZATION_LEVEL STREQUAL "2")

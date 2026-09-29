@@ -117,6 +117,18 @@ the same command. Run it with `--source-only` first to check your tools and disc
 Step by step, with updating and troubleshooting: [Build your own BlueWake](docs/BUILD_YOUR_OWN.md).
 Signing with your own identity and other options: [docs/status/DEVICE_BUILD.md](docs/status/DEVICE_BUILD.md).
 
+### Windows
+
+BlueWake also builds as a native Windows x86-64 program (Direct3D 12), from the same disc and the same verified
+game source. With Visual Studio's C++ workload and its Clang component, Python, Git, CMake and Ninja:
+
+~~~bash
+python scripts/windows/build.py "D:\Games\The Legend of Zelda - The Wind Waker (USA).rvz"
+~~~
+
+It accepts an `.iso` or a Dolphin `.rvz` and writes `build\windows\BlueWake\BlueWake.exe`, a personal build like
+the IPA: never share it. See [BlueWake on Windows](docs/WINDOWS.md).
+
 ## Mods
 
 Open **⋯ › Mods**. Each mod applies the next time BlueWake starts and never changes your saves.
@@ -207,6 +219,7 @@ and the BlueWake slot to put it in; your current saves are backed up first. USA 
 
 - [Current status](docs/status/CURRENT.md): the engineering log, newest first
 - [Build your own BlueWake](docs/BUILD_YOUR_OWN.md): the player's guide
+- [BlueWake on Windows](docs/WINDOWS.md): building and playing on a Windows PC
 - [The Builder](docs/BUILDER.md): how the build works, and reusing it for other ports
 - [Device build](docs/status/DEVICE_BUILD.md): signing, installing and build options
 - [Mods](docs/MODS.md): the three mods and how code mods are built

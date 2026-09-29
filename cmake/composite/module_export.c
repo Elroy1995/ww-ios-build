@@ -11,9 +11,20 @@ unsigned dolrecomp_call_depth = 0;
 static BluewakeEdgeServiceFn s_edge_service;
 static void* s_edge_service_user;
 
+/* The x86-64-v3 dispatch clones come only from DolRecomp's LLVM object
+ * backend; the C backend the Builder uses emits none, so an x86-64 build (the
+ * Windows port) dispatches through dolrecomp_call unless the source says it
+ * carries them. */
+#if defined(__x86_64__) && defined(DOLRECOMP_HAS_X86_64_V3_DISPATCH)
+#define BLUEWAKE_X86_64_V3_DISPATCH 1
+#else
+#define BLUEWAKE_X86_64_V3_DISPATCH 0
+#endif
+
+#if BLUEWAKE_X86_64_V3_DISPATCH
 static int host_has_x86_64_v3(void)
 {
-#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+#if defined(__GNUC__) || defined(__clang__)
     static int supported = -1;
     if (supported < 0)
     {
@@ -31,10 +42,11 @@ static int host_has_x86_64_v3(void)
     return 0;
 #endif
 }
+#endif
 
 static int selected_dispatch(CPUState* ctx, u32 address)
 {
-#if defined(__x86_64__)
+#if BLUEWAKE_X86_64_V3_DISPATCH
     if (host_has_x86_64_v3())
         return dolrecomp_call__x86_64_v3(ctx, address);
 #endif

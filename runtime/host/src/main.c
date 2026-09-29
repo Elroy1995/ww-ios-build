@@ -6229,8 +6229,13 @@ int main(int argc, char** argv) {
                 const time_t now = time(NULL);
                 struct tm local;
                 localtime_r(&now, &local);
-                seconds = (long long)now + (long long)local.tm_gmtoff -
-                          946684800ll;
+#if defined(_WIN32)
+                // No tm_gmtoff: the local time read back as UTC is the offset.
+                const long long gmtoff = (long long)_mkgmtime(&local) - (long long)now;
+#else
+                const long long gmtoff = (long long)local.tm_gmtoff;
+#endif
+                seconds = (long long)now + gmtoff - 946684800ll;
             } else {
                 char* clock_end = NULL;
                 seconds = strtoll(clock_env, &clock_end, 10);
