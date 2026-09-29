@@ -6,6 +6,16 @@
 #include "direct_calls.h"
 #endif
 
+/* The chunks' gather-pipe batch reaches the host before the host looks
+ * (gather_pipe_batch.h): before its edge service and whenever the loop
+ * returns to it. The unit test builds the loop without a batch. */
+#ifdef BLUEWAKE_GATHER_PIPE_BATCH
+#include "gather_pipe_batch.h"
+#define BLUEWAKE_GATHER_PIPE_DRAIN() bw_gather_pipe_drain()
+#else
+#define BLUEWAKE_GATHER_PIPE_DRAIN() ((void)0)
+#endif
+
 typedef int (*BluewakeCompositeDispatchFn)(CPUState* ctx, u32 address);
 
 /* The boundary loop, in the header and always inlined.
@@ -26,7 +36,7 @@ typedef int (*BluewakeCompositeDispatchFn)(CPUState* ctx, u32 address);
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((always_inline))
 #endif
-static inline int bluewake_chassis_dispatch_loop(
+static inline int bluewake_chassis_dispatch_run(
     CPUState* ctx, u32 address, BluewakeCompositeDispatchFn dispatch,
     BluewakeEdgeServiceFn edge_service, void* service_user) {
     if (ctx == NULL || dispatch == NULL)
@@ -51,8 +61,11 @@ static inline int bluewake_chassis_dispatch_loop(
          * watch this address (direct_calls.h). Otherwise it is asked. */
         if (!(bw_edge_filter_enabled && bw_host_quiet(ctx) && bw_edge_unwatched(address)))
 #endif
-        if (edge_service(service_user, ctx, address))
-            return 1;
+        {
+            BLUEWAKE_GATHER_PIPE_DRAIN();
+            if (edge_service(service_user, ctx, address))
+                return 1;
+        }
 
         prior_downcount = ctx->downcount;
         dispatched = dispatch(ctx, address);
@@ -82,6 +95,18 @@ static inline int bluewake_chassis_dispatch_loop(
             return 1;
         }
     }
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((always_inline))
+#endif
+static inline int bluewake_chassis_dispatch_loop(
+    CPUState* ctx, u32 address, BluewakeCompositeDispatchFn dispatch,
+    BluewakeEdgeServiceFn edge_service, void* service_user) {
+    const int dispatched = bluewake_chassis_dispatch_run(
+        ctx, address, dispatch, edge_service, service_user);
+    BLUEWAKE_GATHER_PIPE_DRAIN();
+    return dispatched;
 }
 
 int bluewake_composite_dispatch_until_boundary(

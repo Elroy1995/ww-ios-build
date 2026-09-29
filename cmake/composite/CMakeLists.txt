@@ -150,6 +150,9 @@ if(EXISTS "${COMPOSITE_DIR}/bw_edge_watch.inc")
   # service elsewhere, and indirect calls can run directly (direct_calls.h).
   target_compile_definitions(${MODULE_NAME} PRIVATE BLUEWAKE_EDGE_FILTER=1)
 endif()
+# The chassis loop hands the chunks' gather-pipe batch (gather_pipe.c) to the
+# host wherever the host looks (dispatch_loop.h).
+target_compile_definitions(${MODULE_NAME} PRIVATE BLUEWAKE_GATHER_PIPE_BATCH=1)
 find_package(Threads REQUIRED)
 target_link_libraries(${MODULE_NAME} PRIVATE Threads::Threads)
 if(WIN32)

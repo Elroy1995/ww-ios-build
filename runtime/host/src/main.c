@@ -6639,11 +6639,24 @@ int main(int argc, char** argv) {
     }
     // Gather-pipe stores straight to the GX writer (cmake/composite/gather_pipe.h):
     // host_mmio_write does nothing else for them unless the FIFO trace is on.
+    // Where the GX backend takes the FIFO as a byte stream, the module collects
+    // them and hands over a run of bytes at a time (gather_pipe_batch.h);
+    // BLUEWAKE_GATHER_PIPE_BATCH=0 sends each store on its own.
     {
         typedef void (*SetGatherPipeFn)(void (*)(u64, u8));
+        typedef void (*SetGatherPipeBytesFn)(void (*)(const u8*, u32));
         SetGatherPipeFn set_gather_pipe = (SetGatherPipeFn)dlsym(lib, "bluewake_composite_set_gather_pipe");
+        SetGatherPipeBytesFn set_gather_pipe_bytes =
+            (SetGatherPipeBytesFn)dlsym(lib, "bluewake_composite_set_gather_pipe_bytes");
         if (set_gather_pipe != NULL)
             set_gather_pipe(g_gx_fifo_trace ? NULL : dol_platform_gx_write);
+        if (set_gather_pipe != NULL && set_gather_pipe_bytes != NULL) {
+            const char* batch_env = getenv("BLUEWAKE_GATHER_PIPE_BATCH");
+            const bool batch = !g_gx_fifo_trace && dol_platform_gx_write_bytes_available() &&
+                               !(batch_env != NULL && batch_env[0] == '0');
+            set_gather_pipe_bytes(batch ? dol_platform_gx_write_bytes : NULL);
+            fprintf(stderr, "[chassis] gather-pipe-batch=%s\n", batch ? "on" : "off");
+        }
     }
 #ifdef BLUEWAKE_HAS_DSP_ADAPTER
     {

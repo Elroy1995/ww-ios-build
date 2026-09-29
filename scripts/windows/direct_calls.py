@@ -209,6 +209,58 @@ def transform_indirect(text, watched):
     return converted, done
 
 
+FALLBACK_MARK = "/* bluewake: interpreted instructions continue in the chunk (cmake/composite/direct_calls.h) */\n"
+FALLBACK = re.compile(
+    r"    // ([0-9A-F]{8}): ([^\n]*)\n"
+    r"    ppc_fallback_instruction\(ctx, (0x[0-9A-F]{8}u), 0x\1u\);\n"
+    r"    return;\n")
+
+
+def transform_fallback(text, watched):
+    """An instruction the translation hands to the interpreter (the cache
+    operations, the OS's special registers) ends its chunk: the chassis loop
+    then dispatches the next address, which is a block the chunk already has.
+    Where the interpreter has moved on to that address and the loop and the
+    edge service would have nothing to do, the chunk carries on there instead.
+    Every such block sets cycle_block_prepaid before it reads it, as it does
+    when a dispatch enters it."""
+    if FALLBACK_MARK in text:
+        return text, 0
+    if INCLUDE not in text:
+        raise ValueError("no generated.h include")
+    bounds = [m.start() for m in FUNCTION.finditer(text)] + [len(text)]
+    out, done, last = [], 0, 0
+    for begin, end in zip(bounds, bounds[1:]):
+        body = text[begin:end]
+        pieces, cursor = [], 0
+        for m in FALLBACK.finditer(body):
+            site = int(m.group(1), 16)
+            following = site + 4
+            if (site in watched or following in watched
+                    or resolve(following) is None
+                    or f"\nlabel_{following:08X}:\n" not in body):
+                continue
+            pieces.append(body[cursor:m.start()])
+            pieces.append(
+                f"    // {m.group(1)}: {m.group(2)}\n"
+                f"    ppc_fallback_instruction(ctx, {m.group(3)}, 0x{m.group(1)}u);\n"
+                f"    if (ctx->pc == 0x{following:08X}u && bw_direct_call_ready(ctx))\n"
+                f"        goto label_{following:08X};\n"
+                "    return;\n")
+            cursor = m.end()
+            done += 1
+        pieces.append(body[cursor:])
+        out.append(text[last:begin])
+        out.append("".join(pieces))
+        last = end
+    out.append(text[last:])
+    converted = "".join(out)
+    if done:
+        header = "" if (MARK in converted or INDIRECT_MARK in converted) else '#include "direct_calls.h"\n'
+        converted = converted.replace(INCLUDE, INCLUDE + FALLBACK_MARK + header, 1)
+    return converted, done
+
+
 def write_watch_list(root, watched):
     """bw_edge_watch.inc: the canonical addresses (0x40000000 clear) the host's
     edge service acts at, for the module's filter (cmake/composite/direct_calls.c)."""
@@ -233,7 +285,7 @@ def main():
         sys.exit(f"no chunks under {root}")
     starts, index_of = chunk_table(root)
     watched = watched_addresses()
-    sites = files = indirect = 0
+    sites = files = indirect = fallback = 0
     for path in chunks:
         m = re.search(r"_([0-9A-F]{8})\.c$", path.name)
         own_start = int(m.group(1), 16) if m else None
@@ -241,17 +293,19 @@ def main():
             original = file.read()
         converted, count = transform(original, own_start, starts, index_of, watched)
         converted, count_indirect = transform_indirect(converted, watched)
-        if count or count_indirect:
+        converted, count_fallback = transform_fallback(converted, watched)
+        if count or count_indirect or count_fallback:
             temporary = path.with_suffix(".c.tmp")
             with open(temporary, "w", encoding="utf-8", newline="") as file:
                 file.write(converted)
             temporary.replace(path)
             sites += count
             indirect += count_indirect
+            fallback += count_fallback
             files += 1
     listed = write_watch_list(root, watched)
-    print(f"direct calls between chunks: {sites} calls and {indirect} indirect calls in {files} chunks; "
-          f"{listed} watched addresses")
+    print(f"direct calls between chunks: {sites} calls, {indirect} indirect calls and "
+          f"{fallback} interpreted instructions in {files} chunks; {listed} watched addresses")
 
 
 if __name__ == "__main__":

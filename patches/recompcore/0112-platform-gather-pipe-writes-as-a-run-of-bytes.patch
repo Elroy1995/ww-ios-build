@@ -1,0 +1,166 @@
+From d7556be999c44fe34eb6eff6c67132cafb9a6e84 Mon Sep 17 00:00:00 2001
+From: elliotttate <elliotttate@gmail.com>
+Date: Tue, 29 Sep 2026 14:11:00 -0400
+Subject: [PATCH] Platform: gather-pipe writes as a run of bytes, for a backend
+ that takes a stream
+
+The game module can collect its gather-pipe stores and hand them over a
+batch at a time (Wind Waker Recomp, cmake/composite/gather_pipe_batch.h),
+where each store was a call through dol_platform_gx_write. A backend whose
+FIFO parser takes a byte stream says so with DolPlatformOps.gx_write_bytes:
+Aurora does with the GX core on and nothing traced, and appends a run to the
+translation worker's batch in one piece when the recorder is open and no
+present waits on the write. Otherwise a byte at a time through
+aurora_backend_gx_write gives the same stream. Hosts ask
+dol_platform_gx_write_bytes_available first; without the operation, sizes
+matter and writes stay one by one.
+---
+ GXRuntime/backends/aurora/aurora_backend.cpp  |  3 ++
+ .../backends/aurora/aurora_backend_private.h  |  1 +
+ GXRuntime/backends/aurora/aurora_graphics.cpp | 44 +++++++++++++++++++
+ GXRuntime/include/gxruntime/platform.h        |  9 ++++
+ GXRuntime/src/platform.c                      | 13 ++++++
+ 5 files changed, 70 insertions(+)
+
+diff --git a/GXRuntime/backends/aurora/aurora_backend.cpp b/GXRuntime/backends/aurora/aurora_backend.cpp
+index 56542ffd..bb92fcd0 100644
+--- a/GXRuntime/backends/aurora/aurora_backend.cpp
++++ b/GXRuntime/backends/aurora/aurora_backend.cpp
+@@ -185,6 +185,9 @@ void install_platform_ops() {
+         .present = aurora_backend_present,
+         .mark_gx_begin = aurora_backend_mark_gx_begin,
+         .gx_write = aurora_backend_gx_write,
++        // The FIFO is a byte stream only through the GX core, and a trace
++        // records each write with its size.
++        .gx_write_bytes = g_gx_core_enabled && !g_trace_armed ? aurora_backend_gx_write_bytes : nullptr,
+         .gx_flush = aurora_backend_gx_flush,
+         .call_display_list = aurora_backend_call_display_list,
+         .set_array = aurora_backend_set_array,
+diff --git a/GXRuntime/backends/aurora/aurora_backend_private.h b/GXRuntime/backends/aurora/aurora_backend_private.h
+index 4d54aafa..eea6111a 100644
+--- a/GXRuntime/backends/aurora/aurora_backend_private.h
++++ b/GXRuntime/backends/aurora/aurora_backend_private.h
+@@ -196,6 +196,7 @@ bool aurora_backend_should_quit(void);
+ void aurora_backend_present(void);
+ void aurora_backend_mark_gx_begin(void);
+ void aurora_backend_gx_write(u64 value, u8 size);
++void aurora_backend_gx_write_bytes(const u8* bytes, u32 size);
+ void aurora_backend_gx_flush(void);
+ void aurora_backend_call_display_list(const void* data, u32 size);
+ void aurora_backend_set_array(u32 attr, const void* data, u32 size, u8 stride);
+diff --git a/GXRuntime/backends/aurora/aurora_graphics.cpp b/GXRuntime/backends/aurora/aurora_graphics.cpp
+index f6ccccd9..da0be2cc 100644
+--- a/GXRuntime/backends/aurora/aurora_graphics.cpp
++++ b/GXRuntime/backends/aurora/aurora_graphics.cpp
+@@ -866,6 +866,30 @@ static inline void shadow_frontend_enqueue_word(u64 value, u8 size) {
+         g_fifo_publish_local();
+ }
+ 
++// A run of consecutive gather-pipe writes, their bytes in guest order, for the
++// running translation worker: shadow_frontend_enqueue_word's bookkeeping for
++// the run, and the bytes appended to the worker's batch in pieces that publish
++// it at the same limit.
++static inline void shadow_frontend_enqueue_bytes(const std::uint8_t* bytes, std::size_t size) {
++    g_shadow_frontend_pending_bytes += size;
++    const std::size_t limit = fifo_local_batch_limit();
++    while (size != 0u) {
++        if (g_fifo_local_size >= limit) {
++            g_fifo_publish_local();
++            continue;
++        }
++        std::size_t piece = limit - g_fifo_local_size;
++        if (piece > size)
++            piece = size;
++        std::memcpy(g_fifo_local + g_fifo_local_size, bytes, piece);
++        g_fifo_local_size += piece;
++        bytes += piece;
++        size -= piece;
++        if (g_fifo_local_size >= limit)
++            g_fifo_publish_local();
++    }
++}
++
+ void shadow_frontend_write(u64 value, u8 size) {
+     if (!g_shadow_frontend_enabled || g_shadow_frontend_failed)
+         return;
+@@ -1648,6 +1672,26 @@ void aurora_backend_gx_flush(void) {
+ #endif
+ }
+ 
++// A run of consecutive gather-pipe writes as their bytes in guest order (the
++// game module's batch). Installed only where the FIFO is a byte stream - the
++// GX core on and nothing traced (install_platform_ops) - so a byte at a time
++// through aurora_backend_gx_write is the same stream as the writes it came
++// from; in play the run goes to the worker's batch in one piece.
++void aurora_backend_gx_write_bytes(const u8* bytes, u32 size) {
++#if GXRUNTIME_HAS_AURORA_RECOMP
++    if (gx_aurora::g_initialized && gx_aurora::g_gx_core_enabled && gx_aurora::g_frame_open &&
++        !gx_aurora::g_trace_armed && gx_aurora::g_fifo_worker_started &&
++        gx_aurora::g_shadow_frontend_enabled && !gx_aurora::g_shadow_frontend_failed &&
++        !gx_aurora::g_display_copy_pending.load(std::memory_order_relaxed)) {
++        gx_aurora::g_fifo_bytes += size;
++        gx_aurora::shadow_frontend_enqueue_bytes(bytes, size);
++        return;
++    }
++#endif
++    for (u32 i = 0; i < size; ++i)
++        aurora_backend_gx_write(bytes[i], 1u);
++}
++
+ void aurora_backend_gx_write(u64 value, u8 size) {
+ #if GXRUNTIME_HAS_AURORA_RECOMP
+     // Every gather-pipe word in play: the recorder open, the translation
+diff --git a/GXRuntime/include/gxruntime/platform.h b/GXRuntime/include/gxruntime/platform.h
+index dc0787f8..4c5a7efa 100644
+--- a/GXRuntime/include/gxruntime/platform.h
++++ b/GXRuntime/include/gxruntime/platform.h
+@@ -32,6 +32,10 @@ typedef struct DolPlatformOps {
+ 
+     void (*mark_gx_begin)(void);
+     void (*gx_write)(u64 value, u8 size);
++    // Consecutive gather-pipe writes as their bytes in guest order, for a
++    // backend whose FIFO parser takes a byte stream (the write sizes do not
++    // matter to it). NULL where they do: the host then sends writes one by one.
++    void (*gx_write_bytes)(const u8* bytes, u32 size);
+     void (*gx_flush)(void);
+     void (*call_display_list)(const void* data, u32 size);
+     void (*set_array)(u32 attr, const void* data, u32 size, u8 stride);
+@@ -74,6 +78,11 @@ bool dol_platform_should_quit(void);
+ void dol_platform_present(void);
+ void dol_platform_mark_gx_begin(void);
+ void dol_platform_gx_write(u64 value, u8 size);
++// Whether the backend takes gather-pipe writes as a byte stream
++// (DolPlatformOps.gx_write_bytes), and a run of them in guest byte order. A
++// caller that has not asked gets a backend without it one byte at a time.
++bool dol_platform_gx_write_bytes_available(void);
++void dol_platform_gx_write_bytes(const u8* bytes, u32 size);
+ // Parse whatever the FIFO write path has buffered. The host calls this where the
+ // guest is about to observe GPU progress - the draw-done commit - so the
+ // translation is never behind a wait it is supposed to satisfy.
+diff --git a/GXRuntime/src/platform.c b/GXRuntime/src/platform.c
+index bac24d4c..19d7740c 100644
+--- a/GXRuntime/src/platform.c
++++ b/GXRuntime/src/platform.c
+@@ -47,6 +47,19 @@ void dol_platform_gx_write(u64 value, u8 size) {
+         g_ops.gx_write(value, size);
+ }
+ 
++bool dol_platform_gx_write_bytes_available(void) {
++    return g_ops.gx_write_bytes != NULL;
++}
++
++void dol_platform_gx_write_bytes(const u8* bytes, u32 size) {
++    if (g_ops.gx_write_bytes != NULL) {
++        g_ops.gx_write_bytes(bytes, size);
++        return;
++    }
++    for (u32 i = 0; i < size; ++i)
++        dol_platform_gx_write(bytes[i], 1);
++}
++
+ void dol_platform_gx_flush(void) {
+     if (g_ops.gx_flush != NULL)
+         g_ops.gx_flush();
+-- 
+2.45.2.windows.1
+

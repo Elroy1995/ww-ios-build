@@ -496,7 +496,10 @@ int main(void) {
         # compile start over. Mods are part of the recorded inputs.
         inputs = hashlib.sha256()
         inputs.update(f"{digest}\n{int(self.mods)}\n".encode())
-        for f in (sorted((ROOT / "scripts/mods").glob("*")) + sorted((ROOT / "mods/widescreen").glob("*.gecko"))
+        # The Windows source steps (finish_tree) too: a changed step must start
+        # from a fresh tree, since each leaves a chunk it has finished as it is.
+        for f in (sorted((ROOT / "scripts/mods").glob("*")) + sorted((ROOT / "scripts/windows").glob("*.py"))
+                  + sorted((ROOT / "mods/widescreen").glob("*.gecko"))
                   + [ROOT / "mods/betterww/options.txt", Path(__file__)]):
             if f.is_file():
                 inputs.update(f.read_bytes())
@@ -735,7 +738,8 @@ int main(void) {
         # The module's own runtime that runs with the game (its dispatch loop and
         # entry points); its build script and cold helpers (the guest CPU's
         # storage, the 60 Hz timing adapters) do not change what the profile counts.
-        for name in ("dispatch_loop.c", "dispatch_loop.h", "module_export.c", "inline_fp.h", "gather_pipe.h", "direct_calls.h", "direct_calls.c"):
+        for name in ("dispatch_loop.c", "dispatch_loop.h", "module_export.c", "inline_fp.h", "gather_pipe.h",
+                     "gather_pipe_batch.h", "direct_calls.h", "direct_calls.c"):
             path = ROOT / "cmake/composite" / name
             key.update(path.relative_to(ROOT).as_posix().encode())
             key.update(path.read_bytes())
