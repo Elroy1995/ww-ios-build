@@ -57,6 +57,22 @@ int main(int argc,char**argv) {
     write_float(&c,c.gpr[3],1);c.gpr[5]=0xCC000000;unchanged(&c,c.pc);
     c.gpr[5]=c.gpr[1]-48;unchanged(&c,c.pc);
     c.gpr[5]=0x80003000;c.gpr[1]=0x803F6720;unchanged(&c,c.pc);
+    c=initial(a,0x8030DA98);c.gpr[6]=0;unchanged(&c,c.pc);
+    c.gpr[6]=1;unchanged(&c,c.pc);
+    c.gpr[6]=GC_MAIN_RAM_SIZE/12u+1;unchanged(&c,c.pc);
+    c.gpr[6]=4;c.gpr[5]=c.gpr[4]+4;unchanged(&c,c.pc);
+    c.gpr[5]=0x817FFFFC;unchanged(&c,c.pc);
+    c.gpr[5]=0x80003000;c.cycle_budget=20;unchanged(&c,c.pc);
+    for(unsigned scenario=0;scenario<5;++scenario) {
+        c=initial(a,0x80328F04);c.gpr[11]=0x80005000;
+        if(scenario==0) c.gpr[11]++;
+        if(scenario==1) c.gpr[11]=0xCC000000;
+        if(scenario==2) c.cycle_budget=20;
+        if(scenario==3) c.cycle_deadline_budget=20;
+        if(scenario==4) c.exception=1; // any pending exception keeps the original path
+        CPUState saved=c;
+        assert(!bluewake_native_gpr(&c,c.pc));assert(memcmp(&c,&saved,sizeof c)==0);
+    }
     puts("native math: fallback leaves state unchanged");
     if(argc<2) {free(a);free(b);return 0;}
     setenv("BLUEWAKE_NATIVE_MATH","0",1);
@@ -106,6 +122,56 @@ int main(int argc,char**argv) {
         }
     }
     puts("native math: 12000 full CPU and memory comparisons against personal module passed");
+    const unsigned counts[]={2,3,17,127,1024,4096};
+    for(unsigned i=0;i<360;++i) {
+        memset(a,0,0x40000);c=initial(a,0x8030DA98);
+        unsigned count=counts[i%6];
+        c.gpr[4]=0x80010000;c.gpr[5]=i%2?c.gpr[4]:0x80020000;
+        c.gpr[6]=count;c.cycle_budget=100000;c.cycle_deadline_budget=100000;
+        c.reserve_valid=true;c.reserve_addr=c.gpr[5]+(i%count)*12;
+        for(unsigned j=0;j<count*3;++j) write_float(&c,c.gpr[4]+4*j,random_float());
+        if(candidate && i%13==0) c.cycle_deadline_budget=18;
+        if(candidate && i%17==0) c.gqr[0]=0x040004;
+        if(candidate && i%19==0) c.cycle_budget=40;
+        if(candidate && i%23==0) write_float(&c,c.gpr[4]+12*(count-1),NAN);
+        memcpy(b,a,0x40000);memcpy(b+0x3F66F0,a+0x3F66F0,8);
+        CPUState reference=c;reference.ram=b;
+        mod->on_state_loaded(&reference);assert(mod->dispatch(&reference,reference.pc));
+        ppc_fpscr_updated(&c);
+        if(candidate) assert(candidate->dispatch(&c,c.pc));
+        else assert(bluewake_native_math(&c,c.pc));
+        reference.ram=a;
+        if(memcmp(&c,&reference,sizeof c) || memcmp(a,b,0x40000)) {
+            fprintf(stderr,"array mismatch case %u count %u seed %08x\n",i,count,seed);
+            for(unsigned j=0;j<sizeof c;++j) if(((u8*)&c)[j]!=((u8*)&reference)[j])
+                fprintf(stderr,"CPU byte %u got %02x want %02x\n",j,((u8*)&c)[j],((u8*)&reference)[j]);
+            unsigned differences=0;
+            for(unsigned j=0;j<0x40000 && differences<32;++j) if(a[j]!=b[j]) {
+                fprintf(stderr,"RAM %08x got %02x want %02x\n",0x80000000+j,a[j],b[j]);++differences;
+            }
+            return 1;
+        }
+    }
+    puts("native arrays: 360 full CPU and memory comparisons, including in-place and worker batches, passed");
+    for(unsigned fn=0;fn<36;++fn) for(unsigned i=0;i<80;++i) {
+        u32 entry=(fn<18?0x80328F04:0x80328F50)+4*(fn%18);
+        memset(a,0,0x10000);c=initial(a,entry);c.gpr[11]=0x80005000;
+        c.reserve_valid=true;c.reserve_addr=c.gpr[11]-4;
+        c.msr=0; // integer-only helper must not require FP availability
+        for(unsigned j=1;j<=18;++j) mem_write32(&c,c.gpr[11]-4*j,random_u32());
+        memcpy(b,a,0x10000);memcpy(b+0x3F66F0,a+0x3F66F0,8);
+        CPUState reference=c;reference.ram=b;
+        mod->on_state_loaded(&reference);assert(mod->dispatch(&reference,entry));
+        ppc_fpscr_updated(&c);assert(bluewake_native_gpr(&c,entry));
+        reference.ram=a;
+        if(memcmp(&c,&reference,sizeof c) || memcmp(a,b,0x10000)) {
+            fprintf(stderr,"GPR mismatch entry %08x case %u\n",entry,i);
+            for(unsigned j=0;j<sizeof c;++j) if(((u8*)&c)[j]!=((u8*)&reference)[j])
+                fprintf(stderr,"CPU byte %u got %02x want %02x\n",j,((u8*)&c)[j],((u8*)&reference)[j]);
+            return 1;
+        }
+    }
+    puts("native GPR: 2880 complete-state comparisons across all 36 entry points passed");
     if (argc>2 && strcmp(argv[2],"--bench")==0) {
         const unsigned iterations=2000000;
         for (unsigned fn=0;fn<3;++fn) {

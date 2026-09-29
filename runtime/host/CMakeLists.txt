@@ -106,6 +106,10 @@ target_include_directories(bluewake_cycle_domain_test PRIVATE
 )
 add_test(NAME bluewake_cycle_domain_test COMMAND bluewake_cycle_domain_test)
 
+add_executable(bluewake_actor_search_budget_test ../../tests/actor_search_budget_test.c)
+target_include_directories(bluewake_actor_search_budget_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME bluewake_actor_search_budget_test COMMAND bluewake_actor_search_budget_test)
+
 add_executable(bluewake_interrupt_sources_test
     ../../tests/interrupt_sources_test.c
     src/cycle_domain.c
@@ -162,7 +166,8 @@ add_test(NAME bluewake_simulation_timing_test COMMAND bluewake_simulation_timing
 
 add_executable(bluewake_native_math_test
     ../../tests/native_math_test.c
-    ../../cmake/composite/native_math.c)
+    ../../cmake/composite/native_math.c
+    ../../cmake/composite/native_work_pool.c)
 target_link_libraries(bluewake_native_math_test PRIVATE gxruntime ${CMAKE_DL_LIBS})
 target_compile_options(bluewake_native_math_test PRIVATE -ffp-contract=off)
 target_include_directories(bluewake_native_math_test PRIVATE

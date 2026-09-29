@@ -60,6 +60,7 @@ message(STATUS "${NUM_CHUNKS} chunk translation units")
 add_library(${MODULE_NAME} SHARED
   module_export.c
   native_math.c
+  native_work_pool.c
   dispatch_loop.c
   ${GXRUNTIME_DIR}/src/core/cpu.c
   ${GXRUNTIME_DIR}/src/core/cpu_exception.c
@@ -115,7 +116,26 @@ endif()
 if(APPLE)
   set_target_properties(${MODULE_NAME} PROPERTIES SUFFIX ".dylib")
 endif()
-target_link_libraries(${MODULE_NAME} PRIVATE m)
+if(EXISTS "${COMPOSITE_DIR}/native_gpr.json")
+  file(READ "${COMPOSITE_DIR}/native_gpr.json" GPR_MANIFEST)
+  string(JSON GPR_ABI GET "${GPR_MANIFEST}" abi)
+  string(JSON GPR_FILES LENGTH "${GPR_MANIFEST}" files)
+  if(NOT GPR_ABI EQUAL 1 OR GPR_FILES LESS 1)
+    message(FATAL_ERROR "Invalid native GPR certification manifest")
+  endif()
+  math(EXPR GPR_LAST "${GPR_FILES} - 1")
+  foreach(INDEX RANGE 0 ${GPR_LAST})
+    string(JSON SOURCE_FILE MEMBER "${GPR_MANIFEST}" files ${INDEX})
+    string(JSON EXPECTED_HASH GET "${GPR_MANIFEST}" files "${SOURCE_FILE}")
+    file(SHA256 "${COMPOSITE_DIR}/${SOURCE_FILE}" ACTUAL_HASH)
+    if(NOT ACTUAL_HASH STREQUAL EXPECTED_HASH)
+      message(FATAL_ERROR "Native GPR source changed: rerun prepare_native_gpr.py (${SOURCE_FILE})")
+    endif()
+  endforeach()
+  target_compile_definitions(${MODULE_NAME} PRIVATE BLUEWAKE_NATIVE_GPR_VERIFIED=1)
+endif()
+find_package(Threads REQUIRED)
+target_link_libraries(${MODULE_NAME} PRIVATE m Threads::Threads)
 target_compile_options(${MODULE_NAME} PRIVATE -O${COMPOSITE_OPTIMIZATION_LEVEL} -ffp-contract=off)
 
 if(COMPOSITE_OPTIMIZATION_LEVEL STREQUAL "2")

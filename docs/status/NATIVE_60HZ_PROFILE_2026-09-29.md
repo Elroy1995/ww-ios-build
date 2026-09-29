@@ -5,6 +5,12 @@ Apple M3 Max. Reaching 60 real gameplay updates and renders per second needs
 substantial reductions in translated game work. Lowering resolution does not
 close the gap.
 
+The subsequent implementation and rendered comparisons are in
+[Native 60 Hz optimization implementation](NATIVE_60HZ_OPTIMIZATIONS_2026-09-29.md),
+including graphics caching/merging, GPU vertices, native arrays/workers and
+register-helper caller continuations. The original measurements below remain
+the baseline, not the final configuration.
+
 ## Measured performance
 
 Same private timing-patched module and Release host, from the isolated

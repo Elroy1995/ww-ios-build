@@ -6,6 +6,8 @@ Source inspection on September 29, 2026: Dusklight
 read without modification. This is an architecture comparison, not a Dusklight
 performance benchmark. BlueWake measurements and their limitations are in
 [the native 60 Hz profile](NATIVE_60HZ_PROFILE_2026-09-29.md).
+The follow-up [implementation report](NATIVE_60HZ_OPTIMIZATIONS_2026-09-29.md)
+records which experiments were built, their tests and measured results.
 
 ## The largest relevant difference
 

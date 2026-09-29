@@ -15,6 +15,7 @@
 #include "core/cpu.h"
 #include "StaticRecompABI.h"
 #include "aram_dma.h"
+#include "actor_search_budget.h"
 #include "audio_capture.h"
 #include "ipl_sram.h"
 #include "card_runtime.h"
@@ -1628,18 +1629,6 @@ static inline const u8* bw_search_word(CPUState* cpu, u32 address) {
     return get_ram_ptr(cpu, address, 4u, NULL);
 }
 
-// One block leader on the precharged path: the leader's budget check passes
-// and the block can charge its whole count up front.
-static inline bool bw_search_leader(s64 downcount, s64 budget, s64 deadline,
-                                    u32 cycles) {
-    if (downcount <= -budget)
-        return false;
-    if (deadline <= 0)
-        return true;
-    const s64 remaining = deadline + downcount;
-    return remaining >= 0 && (u64)remaining >= (u64)cycles;
-}
-
 static void host_actor_search_native(CPUState* cpu) {
     if (cpu->lr != BW_SEARCH_NDIT_RETURN || cpu->gpr[29] != BW_SEARCH_JUDGE_FILTER ||
         (cpu->ctr & ~3u) != BW_SEARCH_JUDGE_FILTER || cpu->gpr[30] != cpu->gpr[4] ||
@@ -1681,25 +1670,15 @@ static void host_actor_search_native(CPUState* cpu) {
         const u32 pid = read_be32(proc_id);
         if (pid == id)
             break;  // the match returns through the translated code
-        s64 d = downcount;
         // JudgeFilter entry (10), JudgeByID (4) and its not-equal tail (2),
         // JudgeFilter's return (5), then cNdIt_Judge: the NULL test (2), the
         // node advance (3), the next load (2), the loop test (2) and the call
         // block (5). Each leader stands for its block's budget check; the
         // return dispatches and the back-edge test the same bound at the same
         // downcount as the leader that follows them.
-        static const u32 k_blocks[] = {10u, 4u, 2u, 5u, 2u, 3u, 2u, 2u, 5u};
-        bool ok = true;
-        for (unsigned b = 0; b < sizeof(k_blocks) / sizeof(k_blocks[0]); ++b) {
-            if (!bw_search_leader(d, budget, deadline, k_blocks[b])) {
-                ok = false;
-                break;
-            }
-            d -= (s64)k_blocks[b];
-        }
-        if (!ok || d <= -budget)  // the chassis check at the next boundary
+        if (!bluewake_actor_search_iteration_fits(downcount, budget, deadline))
             break;
-        downcount = d;
+        downcount -= 35;
         last_id = pid;
         node = next;
         next = read_be32(next_next);
