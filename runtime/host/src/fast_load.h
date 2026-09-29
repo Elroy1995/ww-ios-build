@@ -17,5 +17,7 @@ void bluewake_fast_load_attach(CPUState* cpu);
 void bluewake_fast_load_retrace(unsigned long long cpu_us);
 // While a scene change's black is fast-forwarded: no wall-clock pacing.
 bool bluewake_fast_load_fast_forward(void);
+// Reads BLUEWAKE_FADE_FRAMES and BLUEWAKE_FAST_FORWARD again (the options menu).
+void bluewake_fast_load_reload(void);
 
 #endif

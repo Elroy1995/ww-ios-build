@@ -15,5 +15,7 @@
 void bluewake_sprint_attach(CPUState* cpu);
 // Once per retrace, on the thread that pumps SDL's events.
 void bluewake_sprint_retrace(void);
+// Reads BLUEWAKE_SPRINT_SPEED again (the options menu).
+void bluewake_sprint_reload(void);
 
 #endif

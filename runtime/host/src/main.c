@@ -22,6 +22,8 @@
 #include "game_options.h"
 #include "fast_load.h"
 #include "jump_button.h"
+#include "settings_menu.h"
+#include "simulation_mode.h"
 #include "sprint.h"
 #include "mouse_camera.h"
 #include "callback_delivery.h"
@@ -4702,6 +4704,7 @@ static void host_sync_vi_cycles(CPUState* cpu) {
     dol_vi_clock_advance(g_cycle_vi_clock, elapsed_cycles);
     while (dol_vi_clock_pop_retrace(g_cycle_vi_clock, NULL)) {
         g_host_retrace_count++;
+        bluewake_simulation_retrace(g_host_retrace_count);
         aurora_backend_service_present();
         host_mods_reapply(cpu);
         bluewake_game_options_retrace(cpu);
@@ -5649,6 +5652,8 @@ static void host_apply_aspect(void) {
 }
 
 int main(int argc, char** argv) {
+    // The options menu's saved choices, before anything reads the environment.
+    bluewake_settings_load();
     host_apply_aspect();
     const char* host_root = host_resolve_root();
     char dylib_scratch[4096 + 128];
@@ -5698,6 +5703,7 @@ int main(int argc, char** argv) {
 
     void* lib = dlopen(dylib_path, RTLD_NOW | RTLD_LOCAL);
     if (!lib) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 1; }
+    if (!bluewake_simulation_init(lib)) { dlclose(lib); return 1; }
 
     GetModuleFn get_module = (GetModuleFn)dlsym(lib, "staticrecomp_get_module");
     if (!get_module) { fprintf(stderr, "dlsym: %s\n", dlerror()); return 1; }
@@ -5942,8 +5948,10 @@ int main(int argc, char** argv) {
         };
         if (dol_aurora_initialize(argc, argv, &aurora_config)) {
             aurora_enabled = true;
+            bluewake_simulation_renderer_ready();
             g_live_pad_enabled = true;
             bluewake_mouse_camera_install();
+            bluewake_settings_menu_install();
             fprintf(stderr, "[host] renderer=aurora window=%ux%u\n",
                     aurora_config.window_width, aurora_config.window_height);
         } else if (renderer_requested) {
@@ -6172,6 +6180,8 @@ int main(int argc, char** argv) {
     bluewake_cycle_domain_init(&g_cycle_domain, cycle_cap,
                                host_cycle_advance_clock,
                                host_cycle_deadline_distance, NULL);
+    if (bluewake_simulation_enabled())
+        bluewake_cycle_domain_set_cpu_multiplier(&g_cycle_domain, 2);
     if (cycle_dynamic_cap)
         bluewake_cycle_domain_set_dynamic_cap(&g_cycle_domain, 256, 1024u);
     bluewake_delivery_digest_init(&g_delivery_digest);

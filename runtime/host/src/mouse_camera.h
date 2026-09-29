@@ -38,5 +38,10 @@ void bluewake_mouse_camera_retrace(void);
 void bluewake_mouse_camera_dispatch(CPUState* cpu, u32 address);
 // On every pad read, on channel 0's live state: left click is A.
 void bluewake_mouse_camera_pad(DolPadState* pad);
+// Whether the mouse is the camera now (Esc gives it back), and giving it back.
+bool bluewake_mouse_camera_captured(void);
+void bluewake_mouse_camera_release(void);
+// Reads BLUEWAKE_MOUSE_CAMERA, _SENSITIVITY and _INVERT_Y again (the options menu).
+void bluewake_mouse_camera_reload(void);
 
 #endif

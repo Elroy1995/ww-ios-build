@@ -16,6 +16,8 @@ typedef u64 (*BluewakeCycleDeadlineFn)(const CPUState* cpu, void* user);
 typedef struct BluewakeCycleDomain {
     u64 absolute_cycles;
     u64 dispatch_cycles;
+    unsigned cpu_multiplier;
+    unsigned subcycle;
     s64 cap;
     s64 dynamic_near_cap;
     u64 dynamic_threshold;
@@ -29,6 +31,10 @@ void bluewake_cycle_domain_init(BluewakeCycleDomain* domain, s64 cap,
                                 BluewakeCycleDeadlineFn deadline, void* user);
 void bluewake_cycle_domain_set_dynamic_cap(BluewakeCycleDomain* domain,
                                            s64 near_cap, u64 threshold);
+// Set once at startup. Translated instruction costs remain in CPU cycles;
+// VI, DSP, audio, timebase and deadlines retain the original hardware clock.
+void bluewake_cycle_domain_set_cpu_multiplier(BluewakeCycleDomain* domain,
+                                               unsigned multiplier);
 void bluewake_cycle_domain_begin_turn(BluewakeCycleDomain* domain,
                                       CPUState* cpu);
 void bluewake_cycle_domain_prepare_dispatch(BluewakeCycleDomain* domain,

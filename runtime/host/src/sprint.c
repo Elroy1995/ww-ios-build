@@ -57,11 +57,24 @@ static void write_f32(CPUState* cpu, u32 address, float value) {
     mem_write32(cpu, address, bits);
 }
 
+static void read_factor(void) {
+    const char* factor = getenv("BLUEWAKE_SPRINT_SPEED");
+    g_factor = factor != NULL && factor[0] != '\0' ? strtod(factor, NULL) : 1.5;
+}
+
+void bluewake_sprint_reload(void) {
+    read_factor();
+    // A sprint under way picks the new speed up at the next retrace.
+    if (g_sprinting && g_cpu != NULL && g_have_base) {
+        write_f32(g_cpu, kMaxSpeed, g_base_speed);
+        write_f32(g_cpu, kRunAnimRate, g_base_rate);
+        g_sprinting = false;
+    }
+}
+
 void bluewake_sprint_attach(CPUState* cpu) {
     g_cpu = cpu;
-    const char* factor = getenv("BLUEWAKE_SPRINT_SPEED");
-    if (factor != NULL && factor[0] != '\0')
-        g_factor = strtod(factor, NULL);
+    read_factor();
     const char* trace = getenv("BLUEWAKE_SPRINT_TRACE");
     g_trace = trace != NULL && trace[0] == '1';
     const char* test = getenv("BLUEWAKE_SPRINT_TEST");
@@ -126,8 +139,12 @@ static bool pad_sprint(void) {
 void bluewake_sprint_retrace(void) {
     ++g_retrace;
     CPUState* cpu = g_cpu;
-    if (cpu == NULL || g_factor <= 1.0)
+    if (cpu == NULL)
         return;
+    if (g_factor <= 1.0) {
+        g_pad_sprint = false;
+        return;
+    }
     if (!g_have_base) {
         // The parameters as the disc has them (once the game is loaded).
         const float speed = read_f32(cpu, kMaxSpeed), rate = read_f32(cpu, kRunAnimRate);

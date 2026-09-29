@@ -10,6 +10,7 @@
 #include <cstdio>
 
 #include "controller_settings.h"
+#include "../../../runtime/host/src/simulation_mode.h"
 
 namespace {
 
@@ -53,7 +54,7 @@ extern "C" void bluewake_settings_tick(void) {
         aurora_set_frame_buffer_scale(static_cast<float>(s.render_scale));
         if (s.anisotropy > 0)
             aurora_set_forced_anisotropy(static_cast<unsigned>(s.anisotropy));
-        aurora_set_frame_interpolation(s.frame_interp);
+        aurora_set_frame_interpolation(s.frame_interp && !bluewake_simulation_enabled());
         std::fprintf(stderr, "[settings] render scale %d, anisotropy %d, 60 fps %d, camera invert x=%d y=%d, "
                      "buttons %s\n",
                      s.render_scale, s.anisotropy, s.frame_interp, s.invert_x, s.invert_y,

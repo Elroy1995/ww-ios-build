@@ -198,6 +198,10 @@ fi
 
 step "6/9 mods"
 if [ "$mods" -eq 1 ]; then profile_mods; else echo "skipped"; fi
+if [ "$game" = bluewake ]; then
+    python3 "$root/scripts/mods/prepare_simulation_60hz.py" "$out/composite-src"
+    python3 "$root/scripts/ios/composite_manifest.py" "$out/composite-src" | awk '{print $1}' > "$out/composite-final.digest"
+fi
 
 if [ "$train_pgo" -eq 1 ]; then
     step "local optimization training (first run adds a Mac test build and about 20 minutes of playback)"

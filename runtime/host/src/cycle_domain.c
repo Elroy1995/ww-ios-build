@@ -18,6 +18,7 @@ static s64 bounded_budget(const BluewakeCycleDomain* domain,
                           const CPUState* cpu, u32* deadline_active,
                           s64* deadline_budget) {
     s64 budget = domain->cap > 0 ? domain->cap : 256;
+    const unsigned multiplier = domain->cpu_multiplier > 0 ? domain->cpu_multiplier : 1;
     bool bounded_by_deadline = false;
     u64 distance = UINT64_MAX;
     if (domain->deadline != NULL) {
@@ -25,10 +26,24 @@ static s64 bounded_budget(const BluewakeCycleDomain* domain,
         if (domain->dynamic_near_cap > 0 &&
             distance <= domain->dynamic_threshold)
             budget = domain->dynamic_near_cap;
+        // The hardware deadline is in original clock units. Convert it to
+        // instruction-cycle units, including any retained fractional cycle.
+        if (multiplier > 1 && distance != UINT64_MAX) {
+            if (distance > UINT64_MAX / multiplier)
+                distance = UINT64_MAX;
+            else {
+                distance *= multiplier;
+                distance = distance > domain->subcycle ? distance - domain->subcycle : 0;
+            }
+        }
+        if (multiplier > 1)
+            budget = budget > INT64_MAX / multiplier ? INT64_MAX : budget * multiplier;
         if (distance <= (u64)budget) {
             budget = distance > 0u ? (s64)distance : 1;
             bounded_by_deadline = true;
         }
+    } else if (multiplier > 1) {
+        budget = budget > INT64_MAX / multiplier ? INT64_MAX : budget * multiplier;
     }
     if (deadline_active != NULL)
         *deadline_active = bounded_by_deadline ? 1u : 0u;
@@ -50,9 +65,25 @@ void bluewake_cycle_domain_init(BluewakeCycleDomain* domain, s64 cap,
         return;
     memset(domain, 0, sizeof(*domain));
     domain->cap = cap > 0 ? cap : 256;
+    domain->cpu_multiplier = 1;
     domain->advance = advance;
     domain->deadline = deadline;
     domain->user = user;
+}
+
+void bluewake_cycle_domain_set_cpu_multiplier(BluewakeCycleDomain* domain,
+                                               unsigned multiplier) {
+    if (domain == NULL) return;
+    domain->cpu_multiplier = multiplier == 2 ? 2 : 1;
+    domain->subcycle = 0;
+}
+
+static u64 hardware_cycles(BluewakeCycleDomain* domain, u64 instruction_cycles) {
+    if (domain->cpu_multiplier != 2) return instruction_cycles;
+    const u64 cycles = instruction_cycles / 2;
+    const unsigned remainder = (unsigned)(instruction_cycles & 1u) + domain->subcycle;
+    domain->subcycle = remainder & 1u;
+    return cycles + remainder / 2;
 }
 
 void bluewake_cycle_domain_set_dynamic_cap(BluewakeCycleDomain* domain,
@@ -94,11 +125,11 @@ static u64 flush_elapsed(BluewakeCycleDomain* domain, CPUState* cpu,
         return 0u;
     }
 
-    const u64 elapsed = (u64)(-(cpu->downcount + 1)) + 1u;
+    const u64 elapsed = hardware_cycles(domain, (u64)(-(cpu->downcount + 1)) + 1u);
     cpu->downcount = 0;
     domain->absolute_cycles += elapsed;
     domain->dispatch_cycles += elapsed;
-    if (domain->advance != NULL)
+    if (domain->advance != NULL && elapsed != 0u)
         domain->advance(cpu, elapsed, domain->user);
     if (rebudget) {
         cpu->cycle_budget = bounded_budget(
@@ -126,7 +157,7 @@ u64 bluewake_cycle_domain_observe(BluewakeCycleDomain* domain, CPUState* cpu,
     const u64 suffix = unexecuted_suffix < charged
                            ? (u64)unexecuted_suffix
                            : charged;
-    const u64 elapsed = charged - suffix;
+    const u64 elapsed = hardware_cycles(domain, charged - suffix);
     cpu->downcount = -(s64)suffix;
     domain->absolute_cycles += elapsed;
     domain->dispatch_cycles += elapsed;

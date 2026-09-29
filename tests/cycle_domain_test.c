@@ -1,5 +1,8 @@
 #include "cycle_domain.h"
 
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <string.h>
 
@@ -71,7 +74,7 @@ int main(void) {
     assert(domain.absolute_cycles == 174u);
 
     assert(bluewake_cycle_domain_flush(&domain, &cpu) == 0u);
-    assert(fixture.advances == 1u);
+    assert(fixture.advances == 3u);
 
     fixture.deadline = 0u;
     bluewake_cycle_domain_rebudget(&domain, &cpu);
@@ -140,5 +143,37 @@ int main(void) {
     assert(fixture.advanced == 24u);
     assert(cpu.downcount == -6);
     assert(cpu.timebase == 0x11223344AABBCCDDull);
+
+    // Twice the instruction throughput, with unchanged VI/audio/timebase
+    // units. Odd cycle costs must survive across observations and turns.
+    memset(&cpu, 0, sizeof cpu);
+    memset(&fixture, 0, sizeof fixture);
+    fixture.deadline = 900;
+    bluewake_cycle_domain_init(&domain, 512, advance, deadline, &fixture);
+    bluewake_cycle_domain_set_cpu_multiplier(&domain, 2);
+    bluewake_cycle_domain_prepare_dispatch(&domain, &cpu);
+    assert(cpu.cycle_budget == 1024 && cpu.cycle_deadline_budget == 1800);
+    cpu.downcount = -1;
+    assert(bluewake_cycle_domain_flush(&domain, &cpu) == 0);
+    assert(domain.subcycle == 1 && cpu.cycle_deadline_budget == 1799);
+    cpu.downcount = -5;
+    assert(bluewake_cycle_domain_flush(&domain, &cpu) == 3);
+    cpu.downcount = -11;
+    assert(bluewake_cycle_domain_observe(&domain, &cpu, 3) == 4);
+    assert(cpu.downcount == -3);
+    assert(bluewake_cycle_domain_flush(&domain, &cpu) == 1);
+    assert(domain.absolute_cycles == 8 && domain.subcycle == 1);
+    fixture.deadline = 1;
+    bluewake_cycle_domain_rebudget(&domain, &cpu);
+    assert(cpu.cycle_budget == 1 && cpu.cycle_deadline_budget == 1);
+    cpu.downcount = -1;
+    assert(bluewake_cycle_domain_end_turn(&domain, &cpu) == 1);
+    for (unsigned i = 0; i < 20000; ++i) {
+        bluewake_cycle_domain_begin_turn(&domain, &cpu);
+        cpu.downcount = -1;
+        bluewake_cycle_domain_end_turn(&domain, &cpu);
+    }
+    assert(domain.absolute_cycles == 10009 && fixture.advanced == 10009);
+    assert(domain.subcycle == 0);
     return 0;
 }
