@@ -173,9 +173,13 @@ class Builder:
                     try:
                         with open(log, "rb") as recent:
                             recent.seek(max(0, log.stat().st_size - 16384))
-                            units = re.findall(rb"\[(\d+/\d+)\]", recent.read())
+                            tail = recent.read()
+                        units = re.findall(rb"\[(\d+/\d+)\]", tail)
+                        retraces = re.findall(rb"retrace=(\d+)", tail)
                         if units:
                             detail = f", {units[-1].decode()}"
+                        elif retraces:
+                            detail = f", retrace {retraces[-1].decode()}"
                     except OSError:
                         pass
                     elapsed = int(now - start)
@@ -218,6 +222,9 @@ class Builder:
         if major < 17:
             die(f"clang 17 or newer is required ({clang_version})")
         self.clang_version = clang_version
+        self.llvm_profdata = shutil.which("llvm-profdata", path=self.env["PATH"])
+        if self.llvm_profdata is None and self.train_pgo:
+            die("llvm-profdata is missing from Visual Studio's LLVM; add the clang component, or pass --no-train")
         self.check_march()
         print(f"{clang_version}; cmake {version}; ninja {subprocess.check_output(['ninja', '--version'], text=True).strip()}; "
               f"{self.args.jobs} jobs; -march={self.args.march}")
@@ -410,9 +417,13 @@ int main(void) {
 
     def configure_app(self):
         self.app_build = self.out / "app"
+        # The app for the same CPU level as the game module: the FIFO worker's
+        # matrix work for Smooth Motion needs AVX2 and FMA to keep up (at the
+        # baseline level it held the game below 30 FPS on Outset, 2026-09-29).
         self.run("app-configure", [
             "cmake", "-S", ROOT / "windows", "-B", self.app_build, "-G", "Ninja",
             "-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++", "-DCMAKE_BUILD_TYPE=Release",
+            f"-DCMAKE_C_FLAGS=-march={self.args.march}", f"-DCMAKE_CXX_FLAGS=-march={self.args.march}",
             "-DBUILD_TESTING=OFF", "-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld",
             "-DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld",
             f"-DBLUEWAKE_WINDOWS_CONSOLE={'ON' if self.args.console else 'OFF'}"])
@@ -495,7 +506,17 @@ int main(void) {
             self.mods_pending = (o / "mods.done").read_text().strip() != "complete" \
                 if (o / "mods.done").exists() else self.mods
         else:
-            sync_tree(new, current)
+            if self.mods and not self.args.source_only:
+                # The mods step adds the variants to this tree and puts the
+                # result in place. Putting the plain tree there first would
+                # rewrite the files the variants change, and Ninja would
+                # compile those again on every rerun.
+                base = o / "mods/composite-src.base"
+                base.parent.mkdir(parents=True, exist_ok=True)
+                shutil.rmtree(base, ignore_errors=True)
+                os.replace(new, base)
+            else:
+                sync_tree(new, current)
             (o / "composite-src.digest").write_text(digest + "\n")
             (o / "composite-inputs.digest").write_text(inputs + "\n")
             (o / "composite-final.digest").write_text(digest + "\n")
@@ -547,9 +568,10 @@ int main(void) {
                            f"mods-{combo}-composite")
 
         print("variants into the composite source")
-        base = m / "composite-src.base"
-        self.composite(o / "translated/dol/generated", o / "translated/rels/generated/rels", o / "game/rels",
-                       o / "game/main.dol", base, "mods-base-composite")
+        base = m / "composite-src.base"  # the verified tree, from step 6
+        if not (base / "generated.h").exists():
+            self.composite(o / "translated/dol/generated", o / "translated/rels/generated/rels", o / "game/rels",
+                           o / "game/main.dol", base, "mods-base-composite")
         # The --mod and --combo specs are colon-separated, and a Windows path
         # has a colon after its drive letter: run in the build directory and
         # name the mod trees relative to it. The mods keep build_mods.sh's
@@ -566,17 +588,26 @@ int main(void) {
             "--exclusive", "widescreen,widescreen1610",
             "--options", options, "--rels-bin-dir", o / "game/rels"], cwd=o)
         dst = o / "composite-src"
-        if (base / "generated.h").read_bytes() != (dst / "generated.h").read_bytes():
-            die(f"{dst} was generated from other inputs; rebuild it first")
-        # The base tree plus the variants: only the variant chunks and the
-        # files that list them change.
+        # The base tree plus the variants, in place of the last build's: only
+        # the files that differ are replaced, so a rerun compiles nothing new.
         sync_tree(base, dst)
         (o / "composite-final.digest").write_text(tree_digest(dst) + "\n")
         (o / "mods.done").write_text("complete\n")
 
     # --- 8 compile -----------------------------------------------------------
     def compile_module(self):
-        build = self.out / "composite"
+        flags = []
+        if self.profile is not None:
+            # The profile is a compiler input but not a header dependency: its
+            # hash in the file name makes Ninja recompile when the counts change.
+            # Code the training never ran is optimized as cold; that saves size
+            # and costs nothing in the scenes that matter (docs/BUILDER.md).
+            flags = [f"-fprofile-instr-use={self.profile.as_posix()}", "-Wno-profile-instr-unprofiled",
+                     "-Wno-profile-instr-out-of-date", "-Wno-backend-plugin"]
+            print(f"with the optimization profile {self.profile.name}")
+        return self.compile_composite(self.out / "composite", self.args.opt_level, flags, [], "composite")
+
+    def compile_composite(self, build, opt_level, extra_flags, extra_link_flags, name):
         rc = self.recompcore
         # Each chunk is one very large function, and two LLVM passes are
         # superlinear on it (clang 22, x86-64, measured with -ftime-report):
@@ -587,12 +618,13 @@ int main(void) {
         #   minutes, joining copies into the context pointer's function-long
         #   live interval over and over. Capping that per large interval took
         #   it to about 2 minutes, at the cost of a few register copies.
-        flags = (f"-march={self.args.march} -fno-slp-vectorize "
-                 "-mllvm -large-interval-freq-threshold=10")
-        self.run("composite-configure", [
+        flags = " ".join([f"-march={self.args.march}", "-fno-slp-vectorize",
+                          "-mllvm", "-large-interval-freq-threshold=10", *extra_flags])
+        link_flags = " ".join(["-fuse-ld=lld", *extra_link_flags])
+        self.run(f"{name}-configure", [
             "cmake", "-S", ROOT / "cmake/composite", "-B", build, "-G", "Ninja", "-DCMAKE_C_COMPILER=clang",
-            "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_C_FLAGS={flags}", "-DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld",
-            f"-DCOMPOSITE_OPTIMIZATION_LEVEL={self.args.opt_level}", f"-DCOMPOSITE_DIR={self.out / 'composite-src'}",
+            "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_C_FLAGS={flags}", f"-DCMAKE_SHARED_LINKER_FLAGS={link_flags}",
+            f"-DCOMPOSITE_OPTIMIZATION_LEVEL={opt_level}", f"-DCOMPOSITE_DIR={self.out / 'composite-src'}",
             f"-DGXRUNTIME_DIR={rc / 'GXRuntime'}", f"-DABI_DIR={rc / 'Source/Core/Core/PowerPC/StaticRecomp'}"])
         # -k 0: a chunk that fails does not stop the others. The usual cause is
         # memory (clang reports "out of memory" when several of the largest
@@ -600,10 +632,10 @@ int main(void) {
         jobs = self.args.jobs
         while True:
             try:
-                self.run("composite-build", ["cmake", "--build", build, "-j", jobs, "--", "-k", "0"], ninja=True)
+                self.run(f"{name}-build", ["cmake", "--build", build, "-j", jobs, "--", "-k", "0"], ninja=True)
                 break
             except BuildError:
-                log = (self.logs / "composite-build.log").read_text(errors="replace")
+                log = (self.logs / f"{name}-build.log").read_text(errors="replace")
                 if jobs <= 1 or "out of memory" not in log:
                     raise
                 jobs = max(1, jobs // 2)
@@ -612,6 +644,122 @@ int main(void) {
         if not module.exists():
             die("the game module was not produced")
         return module
+
+    # --- local optimization training ---------------------------------------
+    # The counterpart of scripts/builder/train_local_pgo.py: the game module is
+    # compiled with LLVM's instrumentation, the normal app plays the opening to
+    # player control headless with it, and the counts it records guide the
+    # optimized compile. The profile is made from the game, so it is private and
+    # stays in the build directory (docs/BUILDER.md). Unlike the Mac, the
+    # bundled Apple-silicon profiles are not used: this one covers the runtime
+    # in the module too, from this compiler.
+    TRAINING_VERSION = "2"
+    TRAINING_RETRACES = 23000
+
+    def training_fingerprint(self):
+        """What the recorded counts depend on: the game source (mods included),
+        the runtime compiled into the module (RecompCore, cmake/composite), the
+        compiler, the CPU level and this recipe. Bump TRAINING_VERSION when the
+        route, or the host's pacing and input, change what the game runs. The
+        host and Windows shell code around the module are left out on purpose:
+        a profile slightly out of date costs little (clang matches what it
+        can), and training takes the better part of an hour. --retrain forces it."""
+        key = hashlib.sha256()
+        key.update(f"{self.TRAINING_VERSION}\n{self.clang_version}\n{self.args.march}\n{self.mods}\n".encode())
+        key.update((self.out / "composite-final.digest").read_bytes())
+        # The parts of RecompCore compiled into the module (cmake/composite):
+        # GXRuntime's CPU core and its headers (the module includes nothing
+        # else of GXRuntime's) and the recompiler's ABI. Aurora and the rest of
+        # the runtime live in the app.
+        for part in ("GXRuntime/src/core", "GXRuntime/include/core", "Source/Core/Core/PowerPC/StaticRecomp"):
+            key.update(f"{part} {self.git('-C', str(self.recompcore), 'rev-parse', f'HEAD:{part}')}\n".encode())
+        for path in sorted((ROOT / "cmake/composite").rglob("*")):
+            if path.is_file():
+                key.update(path.relative_to(ROOT).as_posix().encode())
+                key.update(path.read_bytes())
+        return key.hexdigest()
+
+    def train(self):
+        work = self.out / "pgo-local"
+        work.mkdir(parents=True, exist_ok=True)
+        profile = work / "composite.profdata"
+        receipt = work / "training.json"
+        key = self.training_fingerprint()
+        if profile.exists() and receipt.exists() and not self.args.retrain:
+            try:
+                previous = json.loads(receipt.read_text())
+            except ValueError:
+                previous = {}
+            if previous.get("fingerprint") == key and previous.get("profile") == sha256_file(profile):
+                print("reusing the optimization profile trained for these inputs")
+                return self.hashed_profile(profile)
+
+        exe = self.build_app()
+        start = time.monotonic()
+        module = self.compile_composite(work / "composite", "0", ["-fprofile-instr-generate"],
+                                        ["-fprofile-instr-generate"], "training-composite")
+        print(f"instrumented game module built ({int(time.monotonic() - start) // 60} min)")
+        for old in work.glob("run-*"):
+            shutil.rmtree(old, ignore_errors=True)
+        raw = []
+        # The opening as a new player plays it, then again with widescreen and
+        # Better Wind Waker's options, so the chunks those mods replace are
+        # optimized for play too rather than as code that never ran.
+        runs = [("plain", None)]
+        if self.mods:
+            runs.append(("mods", "widescreen,betterww"))
+        for name, mods in runs:
+            raw += self.training_run(exe, module, work / f"run-{name}", mods)
+        self.run("training-merge", [self.llvm_profdata, "merge", "-o", profile, *raw])
+        stats = subprocess.run([self.llvm_profdata, "show", "--all-functions", profile], capture_output=True,
+                               text=True).stdout
+        executed = [int(c) for c in re.findall(r"(?m)^  func_[0-9A-Fa-f]+\S*:\n(?:    .*\n)*?    Function count: (\d+)",
+                                               stats)]
+        ran = sum(1 for count in executed if count > 0)
+        if ran == 0:
+            die("the optimization profile counted no translated game functions")
+        print(f"optimization profile: {ran} translated functions ran ({len(executed)} in the module)")
+        receipt.write_text(json.dumps({"fingerprint": key, "profile": sha256_file(profile),
+                                       "trained": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}, indent=2))
+        return self.hashed_profile(profile)
+
+    def training_run(self, exe, module, run, mods):
+        """One headless playback of the opening: boot, A at the title, the
+        opening cutscene's text confirmed, player control on Outset. A new card
+        in its own folder; the player's saves are never touched."""
+        run.mkdir(parents=True)
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("BLUEWAKE_", "DOL_", "LLVM_PROFILE_"))}
+        env.update({
+            "LLVM_PROFILE_FILE": str(run / "%m-%p.profraw"),
+            "BLUEWAKE_DATA_DIR": str(run), "BLUEWAKE_NO_DIALOG": "1", "BLUEWAKE_RENDERER": "headless",
+            "BLUEWAKE_DOL": str(self.out / "game/main.dol"), "BLUEWAKE_RELS_DIR": str(self.out / "game/rels"),
+            "BLUEWAKE_DISC": str(self.iso),
+            "BLUEWAKE_DSP_IROM": str(self.recompcore / "Data/Sys/GC/dsp_rom.bin"),
+            "BLUEWAKE_DSP_COEF": str(self.recompcore / "Data/Sys/GC/dsp_coef.bin"),
+            "BLUEWAKE_MAX_RETRACES": str(self.TRAINING_RETRACES), "BLUEWAKE_WALL_PACE": "0",
+            "BLUEWAKE_PLAYER_PROBE": "1", "BLUEWAKE_PAD_BUTTONS": "0x0100",
+            "BLUEWAKE_PAD_PULSE_ON_TITLE_READY": "1", "BLUEWAKE_PAD_PULSE_LENGTH": "2",
+            "BLUEWAKE_PAD_CONFIRM_EVENT": "any",
+            "BLUEWAKE_PAD_SCRIPT": ",".join(f"{n}:0x0100:2" for n in range(17800, 22001, 150)),
+        })
+        if mods:
+            env["BLUEWAKE_MODS"] = mods
+        log = self.run(f"training-playback-{run.name[4:]}", [exe, "--module", module], env=env)
+        text = log.read_text(errors="replace")
+        if "[player-milestone] control-admitted" not in text:
+            die(f"the training playback did not reach player control; profile rejected (see {log})")
+        raw = sorted(run.glob("*.profraw"))
+        if not raw:
+            die(f"the training playback wrote no profile (see {log})")
+        return raw
+
+    def hashed_profile(self, profile):
+        folder = self.out / "profiles"
+        folder.mkdir(exist_ok=True)
+        target = folder / f"composite-{sha256_file(profile)[:16]}.profdata"
+        if not target.exists():
+            shutil.copy2(profile, target)
+        return target
 
     # --- 9 app ---------------------------------------------------------------
     def build_app(self):
@@ -661,6 +809,8 @@ int main(void) {
             "composite_digest": (self.out / "composite-src.digest").read_text().strip(),
             "mods": bool(self.mods),
             "march": self.args.march,
+            "local_training": self.profile is not None,
+            "composite_profile_sha256": sha256_file(self.profile) if self.profile else "",
             "compiler": self.clang_version,
             "module_sha256": sha256_file(app / MODULE),
             "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -689,6 +839,8 @@ int main(void) {
         args = self.args
         self.mods = not args.no_mods
         self.mods_pending = self.mods
+        self.train_pgo = not (args.no_train or args.no_pgo)
+        self.profile = None
         print(f"Building The Legend of Zelda: The Wind Waker (GameCube USA GZLE01 rev 0) for Windows from {args.disc}")
         step("1/10 tools")
         self.check_tools()
@@ -729,6 +881,13 @@ int main(void) {
             print("mods already in the composite source")
         else:
             self.build_mods()
+        if self.train_pgo:
+            step("local optimization training (the first time: an instrumented game module and two "
+                 "headless playbacks of the opening)")
+            self.profile = self.train()
+        else:
+            step("local optimization training")
+            print("skipped: the game module is compiled without an optimization profile")
         step(f"8/10 compile the game module (-O{args.opt_level}, -march={args.march}; this is the long step)")
         start = time.monotonic()
         module = self.compile_module()
@@ -777,6 +936,11 @@ def main():
                              "any Intel Haswell or AMD Zen or newer; lowered automatically on older CPUs)")
     parser.add_argument("--opt-level", choices=("1", "2"), default="2", help="game module optimization level")
     parser.add_argument("--no-mods", action="store_true", help="skip the widescreen and Better Wind Waker variants")
+    parser.add_argument("--no-train", action="store_true",
+                        help="skip local optimization training: faster to build, slower in game")
+    parser.add_argument("--no-pgo", action="store_true", help="no optimization profile at all (implies --no-train)")
+    parser.add_argument("--retrain", action="store_true",
+                        help="train again even though the game source, runtime and compiler are unchanged")
     parser.add_argument("--console", action="store_true", help="build BlueWake.exe as a console program")
     parser.add_argument("--accept-new-composite", action="store_true",
                         help="continue if the generated source differs from the verified one")

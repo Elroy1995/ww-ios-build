@@ -38,5 +38,11 @@ void bluewake_mouse_camera_retrace(void);
 void bluewake_mouse_camera_dispatch(CPUState* cpu, u32 address);
 // On every pad read, on channel 0's live state: left click is A.
 void bluewake_mouse_camera_pad(DolPadState* pad);
+// A settings menu (the Windows host's): turn the mouse camera on or off and
+// set its sensitivity and vertical direction, and hold it off while the menu
+// is open, so a click works the menu instead of taking the mouse. Main thread.
+void bluewake_mouse_camera_configure(bool enabled, double sensitivity, bool invert_y);
+void bluewake_mouse_camera_block(bool blocked);
+bool bluewake_mouse_camera_captured(void);
 
 #endif

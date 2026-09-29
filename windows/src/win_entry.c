@@ -40,6 +40,8 @@
 #include <SDL3/SDL.h>
 #include <aurora/aurora.h>
 
+#include "win_settings.h"
+
 int bluewake_host_main(int argc, char** argv);
 
 static char g_exe_dir[MAX_PATH * 4];
@@ -427,24 +429,21 @@ static LONG WINAPI report_crash(EXCEPTION_POINTERS* info) {
 static HHOOK g_hotkey_hook;
 
 static LRESULT CALLBACK hotkey_hook(int code, WPARAM key, LPARAM flags) {
-    const int pressed = (flags & (1u << 31)) == 0 && (flags & (1u << 30)) == 0;  // down, not a repeat
-    if (code == HC_ACTION && pressed) {
-        if (key == VK_F11) {
-            SDL_Window* window = SDL_GetKeyboardFocus();
-            if (window != NULL)
-                SDL_SetWindowFullscreen(window, (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) == 0);
-        } else if (key == VK_F10) {
-            const bool on = !aurora_get_frame_interpolation();
-            aurora_set_frame_interpolation(on);
-            fprintf(stderr, "[windows] Smooth Motion %s\n", on ? "on" : "off");
-        } else if (key == VK_F9) {
-            static int fps_shown = -1;
-            if (fps_shown < 0)
-                fps_shown = getenv("DOL_AURORA_SHOW_FPS") != NULL && getenv("DOL_AURORA_SHOW_FPS")[0] == '1';
-            fps_shown = !fps_shown;
-            aurora_set_fps_overlay(fps_shown != 0);
-        }
-    }
+    const int down = (flags & (1u << 31)) == 0;
+    const int repeat = (flags & (1u << 30)) != 0;
+    const int alt = (flags & (1u << 29)) != 0;
+    static int trace = -1;  // BLUEWAKE_KEY_TRACE=1: every key the hook sees
+    if (trace < 0)
+        trace = getenv("BLUEWAKE_KEY_TRACE") != NULL && getenv("BLUEWAKE_KEY_TRACE")[0] == '1';
+    if (trace)
+        fprintf(stderr, "[keys] code=%d vk=0x%02X %s%s%s\n", code, (unsigned)key, down ? "down" : "up",
+                repeat ? " repeat" : "", alt ? " alt" : "");
+    // A key BlueWake handles (win_settings.cpp) is kept from the game: F1, F9,
+    // F10, F11, Esc for the menu, and Alt+Enter, whose Return would be START.
+    if (code == HC_ACTION && down && !repeat && bw_settings_key((unsigned)key, alt))
+        return 1;
+    if (code == HC_ACTION && key == VK_RETURN && alt)
+        return 1;
     return CallNextHookEx(g_hotkey_hook, code, key, flags);
 }
 
@@ -453,7 +452,9 @@ static void usage(void) {
             "usage: BlueWake.exe [options]\n"
             "  --widescreen       16:9 (the widescreen mod: a wider camera and HUD)\n"
             "  --aspect A         4:3 (the game's own), 16:10 or 16:9\n"
-            "  --smooth           Smooth Motion: 60 FPS with in-between frames (F10 toggles)\n"
+            "  --smooth           Smooth Motion: 60 FPS with in-between frames (the default;\n"
+            "                     F10 toggles it)\n"
+            "  --no-smooth        the game's own 30 FPS\n"
             "  --betterww         Better Wind Waker's settings, at their defaults\n"
             "  --options LIST     change them: name,-name,... (mods\\betterww\\options.txt)\n"
             "  --fullscreen       start in fullscreen (F11 toggles it while playing)\n"
@@ -469,7 +470,9 @@ static void usage(void) {
             "Keyboard: arrows D-pad, J A, K B, U X, I Y, W/A/S/D stick,\n"
             "H/F/T/G C-stick, E/R L/R, Q Z, Return START. Game controllers work too.\n"
             "Mouse: click the game, then move it to turn the camera; Esc releases it.\n"
-            "F11 fullscreen, F10 Smooth Motion, F9 frame rate.\n");
+            "F1 or Esc settings, F11 or Alt+Enter fullscreen, F10 Smooth Motion, F9 frame rate.\n"
+            "The settings menu saves to %%APPDATA%%\\BlueWake\\settings.ini; options given here\n"
+            "win for the session.\n");
 }
 
 static void fatal_box(const char* message) {
@@ -486,6 +489,7 @@ static void fatal_box(const char* message) {
 }
 
 int main(int argc, char** argv) {
+    bw_settings_capture_environment();
     resolve_dirs();
     if (getenv("BLUEWAKE_SESSION_LOG") == NULL || strcmp(getenv("BLUEWAKE_SESSION_LOG"), "0") != 0)
         start_session_log();
@@ -518,6 +522,9 @@ int main(int argc, char** argv) {
             // static initializers, before main: set them through its API.
             _putenv_s("DOL_AURORA_FRAME_INTERP", "1");
             aurora_set_frame_interpolation(true);
+        } else if (strcmp(a, "--no-smooth") == 0) {
+            _putenv_s("DOL_AURORA_FRAME_INTERP", "0");
+            aurora_set_frame_interpolation(false);
         } else if (strcmp(a, "--fullscreen") == 0) {
             _putenv_s("DOL_AURORA_FULLSCREEN", "1");
         } else if (strcmp(a, "--window") == 0 && more) {
@@ -545,6 +552,11 @@ int main(int argc, char** argv) {
     if (mods[0] != '\0')
         _putenv_s("BLUEWAKE_MODS", mods);
 
+    // The player's settings (settings.ini, the F1 menu), where the command
+    // line did not already choose.
+    bw_settings_load(g_data_dir);
+    bw_settings_apply_launch();
+
     // The same play configuration as the iOS app (ios_entry.m): one perf line
     // a second in the log, wall-clock pacing, Dolphin's HLE Zelda ucode, the
     // real clock for save dates, and the console's SRAM (stereo) kept with the
@@ -557,9 +569,6 @@ int main(int argc, char** argv) {
     bw_default("BLUEWAKE_MAX_BLOCKS", "100000000000");
     bw_default("BLUEWAKE_DSP_MODE", "hle");
     bw_default("BLUEWAKE_CLOCK", "now");
-    // A desktop window can take any shape: keep the game's aspect and
-    // letterbox, as on iOS. --stretch fills the window instead.
-    bw_default("DOL_AURORA_ASPECT_FIT", "1");
     bw_default_path("BLUEWAKE_SRAM", g_data_dir, "sram.bin");
     bw_default_path("BLUEWAKE_CARD_PATH", g_data_dir, "GZLE01.card");
     bw_default_path("BLUEWAKE_DOL", g_exe_dir, "game\\main.dol");
@@ -615,6 +624,7 @@ int main(int argc, char** argv) {
     // The name the volume mixer shows for the game's audio.
     SDL_SetAppMetadata("BlueWake", "0.1", "dev.bluewake.BlueWake");
     g_hotkey_hook = SetWindowsHookExW(WH_KEYBOARD, hotkey_hook, NULL, GetCurrentThreadId());
+    bw_settings_install();
     start_profile();
     char* host_argv[3] = {argv[0], module, NULL};
     const int status = bluewake_host_main(2, host_argv);

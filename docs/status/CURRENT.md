@@ -1,3 +1,41 @@
+## 2026-09-29 Windows: the settings menu, local optimization training, and a steady 60 FPS
+
+**Settings and window** (`windows/src/win_settings.cpp`). F1 (or Esc) opens an ImGui settings menu over
+the game: fullscreen, Smooth Motion, the frame rate, render resolution, texture filtering, the mouse
+camera, the controller's camera stick, the aspect and Better Wind Waker's options, the HD texture pack
+and the sound mode, saved to `%APPDATA%\BlueWake\settings.ini` (launch-time ones behind a Restart
+button). The window opens centred and sized for the screen, and comes back where it was left; F11 or
+Alt+Enter toggles fullscreen (Alt+Enter no longer reaches the game as START). The menu's font is
+Segoe UI at the display's scale, in an atlas of its own uploaded through `aurora_imgui_add_texture`:
+growing ImGui's own atlas rebuilt it on the main thread while the render worker submitted, and Dawn's
+device is not thread-safe here (two of three launches crashed in the driver). The jump (Space) and
+sprint (Shift) from the Mac build work on Windows too, and are listed in the menu.
+
+**Optimization training on Windows** (`scripts/windows/build.py`): an instrumented module plays the
+opening twice headless (plain, then widescreen with Better Wind Waker), 288 of 813 translated
+functions ran, and the module is compiled with the profile. It is retrained only when the game source,
+the parts of RecompCore compiled into the module (GXRuntime's CPU core and its headers, the ABI), the
+compiler or the CPU level change; a rerun with nothing changed compiles nothing.
+
+**Smooth Motion at 60** (RecompCore 94b97ce, patch 0103, on top of b4af144's draw-heavy work). On the PC
+(i9-13900KF, RTX 5090) Smooth Motion held the game at 24 to 28 FPS in Outset's village: about 10,000
+draws a frame, and the FIFO worker, which the game waits for at each frame's end, was saturated. The
+in-between matching and blending now run on a helper thread in draw order (end_frame waits for it), the
+in-between staging makes fewer passes over the 2.8 KB constant block, an unchanged texture takes one
+lookup instead of two, and the app is compiled for x86-64-v3 like the game module (AVX2 and FMA; the
+baseline build alone was 28 FPS on Outset). Frames with nothing to blend (menus, still shots, cuts) keep
+the in-between cadence, so the timing does not jump by half a frame at each cut and the counter does not
+drop to 30 in menus. Paced through the new-game opening with everything merged (461 s): the game at
+full speed every second (lowest 59.8 retraces a second, the village included), 60 FPS shown in all but
+9 seconds, each a scene change where the game itself skips a frame or briefly runs past 30, and every
+in-between frame halfway between its neighbours (`frame_interp_report.py`: 30 of 30, ratio 1.03).
+
+**Fast scene changes on Direct3D 12** (RecompCore 060293f, patch 0104). With the present suppressed,
+end_frame's status check took the Error status it starts from for the surface's and dropped the
+surface; the swapchain made in its place for the same window failed with E_ACCESSDENIED and lost the
+device at the first fast-forwarded black (every launch, four seconds in). It now leaves the surface
+alone. Not yet run on the Mac; the changes are not platform-specific.
+
 ## 2026-09-29 Fast scene changes, a sprint, and 60 FPS in the Forsaken Fortress (Mac-tested)
 
 **Scene changes** (`runtime/host/src/fast_load.c`; RecompCore b4af144, patch 0101). A door or an exit

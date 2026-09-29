@@ -101,6 +101,7 @@ static const double kScopeZoomPerNotch = 0.125;
 
 static bool g_enabled;
 static bool g_captured;
+static bool g_blocked; // a menu has the mouse (bluewake_mouse_camera_block)
 static bool g_click; // left button held while the mouse is the camera: A
 static SDL_WindowID g_window;
 static double g_sum_x, g_sum_y;
@@ -159,10 +160,12 @@ static void set_captured(bool captured) {
 static void observe(const void* sdl_event, void* user) {
     (void)user;
     const SDL_Event* event = (const SDL_Event*)sdl_event;
-    bluewake_jump_button_event(sdl_event);
+    // While a settings menu is open its keys are not the game's (Space jumps).
+    if (!g_blocked)
+        bluewake_jump_button_event(sdl_event);
     switch (event->type) {
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        if (event->button.button != SDL_BUTTON_LEFT)
+        if (event->button.button != SDL_BUTTON_LEFT || !g_enabled || g_blocked)
             break;
         if (g_captured) {
             g_click = true;
@@ -206,14 +209,32 @@ void bluewake_mouse_camera_install(void) {
     // An iPad's touches arrive as mouse events too; its controls are on screen.
     return;
 #else
+    // Installed even when off: the jump button reads the same events, and a
+    // settings menu can turn the camera on.
     const char* on = getenv("BLUEWAKE_MOUSE_CAMERA");
-    if (on != NULL && on[0] == '0')
-        return;
-    g_enabled = true;
+    g_enabled = on == NULL || on[0] != '0';
     dol_aurora_set_event_observer(observe, NULL);
-    fprintf(stderr, "[mouse] click the game to turn the camera with the mouse\n");
+    if (g_enabled)
+        fprintf(stderr, "[mouse] click the game to turn the camera with the mouse\n");
 #endif
 }
+
+void bluewake_mouse_camera_configure(bool enabled, double sensitivity, bool invert_y) {
+    g_enabled = enabled;
+    if (sensitivity > 0.0)
+        g_sensitivity = sensitivity;
+    g_invert_y = invert_y ? -1.0 : 1.0;
+    if (!enabled)
+        set_captured(false);
+}
+
+void bluewake_mouse_camera_block(bool blocked) {
+    g_blocked = blocked;
+    if (blocked)
+        set_captured(false);
+}
+
+bool bluewake_mouse_camera_captured(void) { return g_captured; }
 
 void bluewake_mouse_camera_attach(CPUState* cpu) {
     (void)cpu;

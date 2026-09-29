@@ -62,12 +62,16 @@ set(BLUEWAKE_HOST_SOURCES
     ${BLUEWAKE_HOST_SRC}/rel_scratch_allocator.c
     ${BLUEWAKE_HOST_SRC}/scheduler_contract.c
     ${BLUEWAKE_HOST_SRC}/game_options.c
+    ${BLUEWAKE_HOST_SRC}/fast_load.c
+    ${BLUEWAKE_HOST_SRC}/jump_button.c
+    ${BLUEWAKE_HOST_SRC}/sprint.c
     ${BLUEWAKE_HOST_SRC}/mouse_camera.c)
 
 # The manifest (DPI awareness, long paths, UTF-8 code page) is merged into the
 # one the linker embeds.
 add_executable(BlueWake
     src/win_entry.c
+    src/win_settings.cpp
     src/bluewake.rc
     resources/BlueWake.manifest
     ${BLUEWAKE_HOST_SOURCES})

@@ -11,8 +11,9 @@ point in place of the iOS app shell.
 
 ## Status
 
-Verified on 2026-09-28 on one PC (Intel i9-13900KF, 64 GB, NVIDIA RTX 5090, Windows 11), Visual Studio 2026's
-clang 22, from a Redump-verified `.rvz`, at commit 79b7e16 plus the Windows port:
+Verified on 2026-09-28 and 29 on one PC (Intel i9-13900KF, 64 GB, NVIDIA RTX 5090, a 3840x2160 120 Hz display,
+Windows 11), Visual Studio 2026's clang 22, from a Redump-verified `.rvz`, at commit 79b7e16 plus the Windows
+port:
 
 - The builder runs end to end from the `.rvz`: the generated game source has the verified digest (`54f54434`,
   the same as the macOS builder's), and the mods match the Mac's counts (widescreen 22 chunks, Better Wind
@@ -22,15 +23,19 @@ clang 22, from a Redump-verified `.rvz`, at commit 79b7e16 plus the Windows port
 - The keyboard reaches the game through SDL (key messages posted to the window read as A at the title).
 - Widescreen 16:9 renders 1280x720 with the HUD at the edges; Better Wind Waker's options load (instant text
   patched 4,411 messages, as on the Mac); Smooth Motion draws the in-between frames.
-- Speed, with the game paced in real time: full speed throughout the title and prologue (227 seconds, none
-  below), the game thread 11 percent busy at the median.
-  The opening on Outset (Link waking, the lookout) is the heaviest stretch measured: median full speed, but
-  the game thread is 94 to 99 percent busy and 32 of 128 seconds dipped below full speed (lowest 79 percent).
-  The builds that reach 30 FPS on the iPad use optimization profiles (docs/BUILDER.md), which this port does
-  not have yet.
+- Speed, with the optimization profile, Smooth Motion and the fast scene changes on, paced in real time
+  through the whole new-game opening (the title, the prologue, Outset from Link waking to the lookout; 461
+  seconds): the game at full speed every second (lowest 59.8 retraces a second), including the view over
+  Outset's village (about 10,000 draws a frame), where it had dropped to 24 to 28 FPS before the in-between
+  work moved off the graphics thread; 60 frames a second shown in all but 9 seconds, each a scene change
+  where the game itself skips a frame or briefly runs past 30. Standing on Outset: 59.2 to 60 every second.
+  In-between frames sit halfway between their neighbours (`scripts/mac/frame_interp_report.py`: 30 of 30).
+- The settings menu (F1 and Esc open and close it; its Display and Mods tabs; a setting changed with the
+  mouse and saved), F11 and Alt+Enter fullscreen, moving the window by its title bar (the place is restored
+  at the next launch) and F9's frame rate, driven with hardware-style mouse and keyboard input.
 
 Not yet tried on Windows: a game controller, audio on other output devices, the HD texture packs, the later
-game, and other PCs (AMD CPUs and GPUs, Vulkan).
+game, and other PCs (AMD CPUs and GPUs, Vulkan, slower CPUs).
 
 ## What you need
 
@@ -62,20 +67,36 @@ the verified digest, adds the mods, compiles the game module and the app, and wr
 `build\windows\BlueWake`. Each stage prints its progress; full logs are in `build\windows\logs`. Rerunning the
 same command reuses finished work.
 
+The first build takes a few hours; on the PC above, most of it is compiling the game module with its
+optimization profile (75 minutes) and training that profile (below, about 25 minutes). Later builds reuse all
+of it and take minutes, unless the game source, RecompCore's runtime, the compiler or `--march` changed.
+
+**Optimization training.** Like the Mac builder's local training, the Windows builder makes an optimization
+profile from your own game: it compiles an instrumented game module (a couple of minutes), plays the opening
+through to player control on Outset twice without a window (once plain, once with widescreen and Better Wind
+Waker's options, about 11 minutes each), and compiles the real module with the counts (clang's
+`-fprofile-instr-use`). The profile is made from your disc, so it stays in `build\windows\pgo-local` and is
+never shared. `--no-train` skips it (a faster first build, a slower game).
+
 Options (`--help` lists all):
 
 | Option | |
 | --- | --- |
 | `--source-only` | Stop after generating the source: checks your tools, disc and translation in a few minutes |
 | `--no-mods` | Skip the mods (widescreen 16:9 and 16:10, Better Wind Waker's options) |
+| `--no-train` | Skip the optimization training (see above) |
+| `--retrain` | Train again although nothing the profile depends on changed |
 | `--jobs N` | Parallel compile jobs (default: the cores, as far as free memory allows) |
-| `--march LEVEL` | CPU level for the game module (default `x86-64-v3`) |
+| `--march LEVEL` | CPU level for the game module and the app (default `x86-64-v3`) |
 | `--console` | Build `BlueWake.exe` as a console program |
 | `--out DIR` | Build directory (default `build\windows`) |
 
 ## Play
 
-Run `build\windows\BlueWake\BlueWake.exe`.
+Run `build\windows\BlueWake\BlueWake.exe`. The window opens in the middle of the screen, sized for it (the
+tallest multiple of 240 lines within 80 percent of the screen); drag its title bar to move it and an edge to
+size it.
+BlueWake remembers where you left it, its size, and whether it was fullscreen.
 
 | | |
 | --- | --- |
@@ -85,22 +106,46 @@ Run `build\windows\BlueWake\BlueWake.exe`.
 | A, B, X, Y | J, K, U, I |
 | L, R, Z | E, R, Q |
 | START | Return |
-| Camera | Click the game, then move the mouse (Esc releases it) |
-| Fullscreen | F11 |
+| Jump | Space (a controller's left bumper) |
+| Sprint | Shift (a controller: click the left stick) |
+| Camera | Click the game, then move the mouse (Esc releases it); the wheel zooms |
+| Settings | F1, or Esc when the mouse is not the camera |
+| Fullscreen | F11 or Alt+Enter |
 | Smooth Motion | F10 |
 | Frame rate | F9 |
 
 Game controllers work through SDL (Xbox, PlayStation, Switch Pro and others). The title screen wants A to reach
-the file menu. The mouse turns the game's own camera around Link and tilts it, and a left click is A; a
-cutscene, door, Z-target or first-person view takes the camera back.
+the file menu. The mouse turns the game's own camera around Link and tilts it, and a left click is A; in first
+person and when aiming an item it aims instead; a cutscene, door or Z-target takes the camera back. Scene
+changes are quick: the fades are short and the black between them runs as fast as the PC can.
 
-Command-line options (`BlueWake.exe --help`):
+**Settings.** F1 opens the settings over the game (it keeps running underneath; the keyboard and mouse work the
+menu until you close it):
+
+- *Display*: fullscreen, Smooth Motion, the frame rate counter, the render resolution (the window's own pixels,
+  or 1x to 4x the GameCube's 480 lines), texture filtering (up to 16x anisotropic), keeping the picture's shape,
+  pausing while the window is in the background, and putting the window back in the middle.
+- *Controls*: the mouse camera, its sensitivity and vertical direction, the controller's camera stick
+  directions, and the keyboard layout.
+- *Mods*: 4:3, 16:10 or 16:9, Better Wind Waker and each of its options, and an HD texture pack (a
+  Dolphin-format pack for GZLE01, in the folder the menu opens).
+- *Sound and files*: fast (Dolphin's high-level) or exact (the DSP's own program) sound, and your files.
+
+Display and control settings apply at once. The mods and the sound mode are compiled paths chosen when the game
+starts, so those marked `*` apply when BlueWake starts again; **Restart now** does that. Everything is saved to
+`%APPDATA%\BlueWake\settings.ini`.
+
+**Smooth Motion** is on by default: the renderer draws a blended frame between each of the game's 30, so the
+game shows 60 frames a second (F9's counter reads `60 FPS (game 30)`). Scenes with nothing to blend (menus, the
+title, still shots) keep the same rhythm, so the picture's timing does not change when they begin or end.
+
+Command-line options (`BlueWake.exe --help`) choose for one session; they win over the settings file:
 
 | Option | |
 | --- | --- |
 | `--widescreen` | 16:9: the widescreen mod (a wider camera, culling and HUD) with a 16:9 picture |
 | `--aspect 16:10` | 16:10 instead (`4:3` is the game's own) |
-| `--smooth` | Smooth Motion: 60 FPS, the renderer drawing a blended frame between each of the game's 30 |
+| `--smooth`, `--no-smooth` | Smooth Motion on (the default) or off (the game's own 30 FPS) |
 | `--betterww` | Better Wind Waker's settings at their defaults (Swift Sail, instant text, faster climbing...) |
 | `--options LIST` | Change them: `name,-name,...`, or `none,name,...` (names in `mods/betterww/options.txt`) |
 | `--fullscreen` | Start in fullscreen |
@@ -123,8 +168,12 @@ never touches it:
 
 - `GZLE01.card`: the memory card with your saves
 - `sram.bin`: the console's settings (sound mode and the like)
+- `settings.ini`: the settings menu's choices and the window's place
+- `Load\Textures\GZLE01`: where an HD texture pack goes
 - `logs\session-*.log`: the newest eight sessions, one line a second of speed and timing plus anything that went
-  wrong. Attach the relevant one to a bug report. If BlueWake crashes, the log says where.
+  wrong. Attach the relevant one to a bug report. If BlueWake crashes, the log says where. Each second has a
+  `[perf]` line (the game's retraces: 60 is full speed) and an `[fps]` line (frames shown, the game's own
+  frames, and how long the game waited for the graphics thread).
 - Aurora's pipeline cache, so later launches start drawing sooner
 
 ## How the port works
@@ -167,7 +216,17 @@ clang (GNU driver, MSVC ABI) from Visual Studio.
   with short sleeps, which Windows' default 15.6 ms timer tick would stretch; the app asks for 1 ms.
 - **Profiling.** `BLUEWAKE_HOST_PROFILE=FILE` samples the game thread every millisecond and writes where it
   was, by module and offset, charging time in system code to the BlueWake function that called it.
+- **Smooth Motion's cost.** GXRuntime translates the game's graphics commands on a worker thread (the FIFO
+  worker), and the game waits for it at each frame's end. On Outset that is about 10,000 draws a frame, and
+  matching each to the frame before and blending its matrices for the in-between frame took a fifth of that
+  thread, enough to hold the game at 24 to 28 FPS in the village. Three changes (RecompCore, Aurora's
+  `frame_interp.cpp` and `gxcore_draw.cpp`) bring it back under: the matching and blending run on a helper
+  thread, in draw order, and the frame's end waits for it; a draw's matrix bank is carried by the camera's
+  motion only for the matrices its vertices name; and the app is compiled for the same CPU level as the game
+  module (AVX2 and FMA for that matrix work; the baseline build alone dropped the game to 28 FPS on Outset).
+- **The optimization profile's key.** The builder retrains when the game source (mods included), the parts of
+  RecompCore compiled into the module (GXRuntime's CPU core and headers, the recompiler ABI), the compiler, the
+  CPU level or the recipe change, not when the app or host code around the module does.
 
-Not done on Windows: the local optimization training and the bundled PGO profiles (both are built and measured
-on Apple Silicon), and the iOS overlay menus (touch controls, controller remapping, the in-game mods and
-save-management screens). Mods are chosen with command-line options instead.
+Not done on Windows: the bundled Apple-silicon PGO profiles (the local training replaces them), and the iOS
+overlay menus (touch controls, controller remapping, save management). The settings menu covers the rest.
