@@ -66,6 +66,9 @@ set(BLUEWAKE_HOST_SOURCES
     ${BLUEWAKE_HOST_SRC}/jump_button.c
     ${BLUEWAKE_HOST_SRC}/simulation_mode.c
     ${BLUEWAKE_HOST_SRC}/sprint.c
+    ${BLUEWAKE_HOST_SRC}/quick_doors.c
+    ${BLUEWAKE_HOST_SRC}/fps_watch.c
+    ${BLUEWAKE_HOST_SRC}/draw_tags.c
     ${BLUEWAKE_HOST_SRC}/mouse_camera.c)
 
 # The manifest (DPI awareness, long paths, UTF-8 code page) is merged into the

@@ -1,4 +1,4 @@
-From e040d0d5308555114f9bd45174e45d90090fec0b Mon Sep 17 00:00:00 2001
+From 2a85bd1a2540fed13529165312678a3a9626f20b Mon Sep 17 00:00:00 2001
 From: elliotttate <elliotttate@gmail.com>
 Date: Tue, 29 Sep 2026 18:36:45 -0400
 Subject: [PATCH 113/113] Aurora: the GX stall watchdog on Mac and Linux only
@@ -10,8 +10,8 @@ pthread handles, so the rest of 6892947 builds for Windows.
 ---
  GXRuntime/backends/aurora/aurora_graphics.cpp       | 13 +++++++++++++
  GXRuntime/graphics/aurora/lib/gfx/render_worker.cpp |  8 +++++++-
- GXRuntime/graphics/aurora/lib/gfx/render_worker.hpp |  2 ++
- 3 files changed, 22 insertions(+), 1 deletion(-)
+ GXRuntime/graphics/aurora/lib/gfx/render_worker.hpp |  4 ++++
+ 3 files changed, 24 insertions(+), 1 deletion(-)
 
 diff --git a/GXRuntime/backends/aurora/aurora_graphics.cpp b/GXRuntime/backends/aurora/aurora_graphics.cpp
 index 7f15bf70..f24c9dc6 100644
@@ -104,10 +104,18 @@ index 6d82e940..f76073c4 100644
    while (true) {
      if (g_idleHook) {
 diff --git a/GXRuntime/graphics/aurora/lib/gfx/render_worker.hpp b/GXRuntime/graphics/aurora/lib/gfx/render_worker.hpp
-index bccee8e2..8db81f82 100644
+index bccee8e2..d24253b7 100644
 --- a/GXRuntime/graphics/aurora/lib/gfx/render_worker.hpp
 +++ b/GXRuntime/graphics/aurora/lib/gfx/render_worker.hpp
-@@ -15,8 +15,10 @@
+@@ -1,5 +1,7 @@
+ #pragma once
++#if !defined(_WIN32)
+ #include <pthread.h>
++#endif
+ 
+ #include <condition_variable>
+ #include <cstddef>
+@@ -15,8 +17,10 @@
  
  namespace aurora::gfx::render_worker {
  

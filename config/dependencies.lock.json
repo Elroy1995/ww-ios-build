@@ -112,7 +112,7 @@
     {
       "id": "recompcore",
       "url": "https://github.com/elliotttate/RecompCore",
-      "sha": "e040d0d5308555114f9bd45174e45d90090fec0b",
+      "sha": "2a85bd1a2540fed13529165312678a3a9626f20b",
       "branch": "bluewake",
       "license": "GPL-3.0",
       "role": "static-recomp runtime (GXRuntime), vendored Aurora renderer at GXRuntime/graphics/aurora, Dolphin DSP donor sources, and the DolRecomp translator as the DolRecomp submodule; the product source for the iPad build (scripts/ios/build_device.sh)",
@@ -564,7 +564,7 @@
         "sha": "8b690b60e699c92e3327886ebd84cf7f05c5d36c",
         "stale": false
       },
-      "vendored_in": "recompcore fork e040d0d at GXRuntime/graphics/aurora (plain files, not a submodule); the build uses that copy with the BlueWake changes included"
+      "vendored_in": "recompcore fork 2a85bd1 at GXRuntime/graphics/aurora (plain files, not a submodule); the build uses that copy with the BlueWake changes included"
     },
     {
       "id": "sunpad",

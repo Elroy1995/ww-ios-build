@@ -6030,8 +6030,7 @@ int main(int argc, char** argv) {
                 bluewake_mouse_camera_install();
                 bluewake_settings_menu_install();
             } else {
-                fprintf(stderr, "[pad] test input only: physical controls disabled
-");
+                fprintf(stderr, "[pad] test input only: physical controls disabled\n");
             }
             fprintf(stderr, "[host] renderer=aurora window=%ux%u\n",
                     aurora_config.window_width, aurora_config.window_height);

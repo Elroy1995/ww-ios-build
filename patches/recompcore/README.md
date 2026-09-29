@@ -9,7 +9,7 @@ The build uses a fork instead. BlueWake's is https://github.com/chrissotraidis/R
 (some were revised by later ones), the files that were never committed on the development Mac, and the
 DolRecomp submodule pointing at https://github.com/chrissotraidis/DolRecomp (5c91d6e). Wind Waker Recomp
 builds from its own copy, https://github.com/elliotttate/RecompCore, branch `windows-release`, commit
-e040d0d: branch `bluewake`'s 6892947 (that tree plus 0098 to 0110) and the Windows port's 0111 to 0113
+2a85bd1: branch `bluewake`'s 6892947 (that tree plus 0098 to 0110) and the Windows port's 0111 to 0113
 (the shader and pipeline caches where the host says, gather-pipe writes as a run of bytes, the GX stall
 watchdog on Mac and Linux only), with DolRecomp at https://github.com/elliotttate/DolRecomp
 (b8b5345, 5c91d6e plus patches/dolrecomp/0019). The Builder fetches it at the commit pinned in
