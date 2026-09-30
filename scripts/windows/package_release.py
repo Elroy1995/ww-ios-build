@@ -57,7 +57,9 @@ You need your own copy of the game: the GameCube USA disc (GZLE01, revision 0)
 as a disc image, an .iso or .gcm file or a Dolphin .rvz. None is included.
 
 Start
-  1. Unpack this whole folder anywhere and run BlueWake.exe.
+  1. Unpack this whole folder anywhere and run BlueWake.exe. BlueWake is not
+     signed, so Windows may say it protected your PC: choose "More info",
+     then "Run anyway".
   2. The first time, BlueWake asks for your disc image. It checks that it is
      the USA disc, prepares it once (a few seconds; an .rvz is first unpacked
      to an ISO, about 1.4 GB, in %APPDATA%\\BlueWake) and remembers it.
@@ -82,8 +84,9 @@ BlueWake.exe --help lists the command-line options.
 Saves, settings, the prepared disc and session logs: %APPDATA%\\BlueWake
 
 Source and documentation: https://github.com/elliotttate/Wind-Waker-Recomp
-(docs/WINDOWS.md). BlueWake's code is under the GNU GPL, version 3 or later;
-the licenses of it and of the libraries it uses are in licenses\\.
+(docs/WINDOWS.md), and the source archive beside this download. BlueWake's
+code is under the GNU GPL, version 3 or later; the licenses of it and of the
+libraries it uses are in licenses\\.
 
 BlueWake is an unofficial project, not affiliated with or endorsed by
 Nintendo. The Legend of Zelda: The Wind Waker is Nintendo's; play it from a
