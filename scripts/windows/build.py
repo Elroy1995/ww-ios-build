@@ -524,6 +524,7 @@ int main(void) {
                 base.parent.mkdir(parents=True, exist_ok=True)
                 shutil.rmtree(base, ignore_errors=True)
                 os.replace(new, base)
+                (base.parent / "variants.started").unlink(missing_ok=True)  # a fresh base (build_mods)
             else:
                 self.finish_tree(new)
                 sync_tree(new, current)
@@ -580,6 +581,15 @@ int main(void) {
 
         print("variants into the composite source")
         base = m / "composite-src.base"  # the verified tree, from step 6
+        # The variants go into the base tree, which is then finished in place.
+        # A run stopped after that began left a tree the variants would be
+        # added to again, each chunk then differing from its mod's and copied
+        # as a variant of every mod (3,740 chunks instead of 65, an instrumented
+        # module past the 4 GB a Windows image can be): make the base again.
+        started = m / "variants.started"
+        if started.exists():
+            print("  the last run stopped while adding the variants: the base tree is made again")
+            shutil.rmtree(base, ignore_errors=True)
         if not (base / "generated.h").exists():
             self.composite(o / "translated/dol/generated", o / "translated/rels/generated/rels", o / "game/rels",
                            o / "game/main.dol", base, "mods-base-composite")
@@ -587,6 +597,7 @@ int main(void) {
         # has a colon after its drive letter: run in the build directory and
         # name the mod trees relative to it. The mods keep build_mods.sh's
         # order, which numbers them.
+        started.write_text("the variants are going into composite-src.base\n")
         self.run("mods-variants", [
             sys.executable, ROOT / "scripts/mods/build_mod_variants.py", "--composite-src", base,
             "--base-dol", o / "game/main.dol",
@@ -607,6 +618,7 @@ int main(void) {
         sync_tree(base, dst)
         (o / "composite-final.digest").write_text(tree_digest(dst) + "\n")
         (o / "mods.done").write_text("complete\n")
+        started.unlink()
 
     # --- 7b the last source steps --------------------------------------------
     def finish_tree(self, root):
@@ -801,11 +813,7 @@ int main(void) {
 
         exe = self.build_app()
         start = time.monotonic()
-        # At -O1: clang's front end places the counters (the profile does not
-        # depend on the optimization level), and at -O0 the instrumented module,
-        # every chunk with its prepaid block copies (fast_blocks.py) and the mod
-        # variants, was a 6.2 GB image, past the 4 GB a Windows image can be.
-        module = self.compile_composite(work / "composite", "1", ["-fprofile-instr-generate"],
+        module = self.compile_composite(work / "composite", "0", ["-fprofile-instr-generate"],
                                         ["-fprofile-instr-generate"], "training-composite")
         print(f"instrumented game module built ({int(time.monotonic() - start) // 60} min)")
         for old in work.glob("run-*"):
