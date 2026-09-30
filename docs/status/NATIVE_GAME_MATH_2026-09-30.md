@@ -74,7 +74,7 @@ The source/hook test used the installed embedded Python because the user's Pytho
 & E:/ComfyUI-MiniMax-H3/ComfyUI_windows_portable/python_embeded/python.exe scripts/windows/native_game_math.py .native-study/hooks
 ```
 
-Results: `19 fragment certificates, 12 hooks, build order, idempotence and all rejection checks passed`; CLI rerun: `native game math: 12/12 certified entries, 0 new hooks in 0 chunks`. The test modifies only worktree copies. It exercises the actual `fast_blocks.transform` after inserting hooks, then certifies the resulting source again. [The recorded diff](tests/native_game_math_hooks.diff) shows every hook insertion in the six affected chunks.
+Results: `19 fragment certificates, 12 hooks, build order, idempotence and all rejection checks passed`; CLI rerun: `native game math: 12/12 certified entries, 0 new hooks in 0 chunks`. The test modifies only worktree copies. It exercises the actual `fast_blocks.transform` after inserting hooks, then certifies the resulting source again. [The recorded diff](../../tests/native_game_math_hooks.diff) shows every hook insertion in the six affected chunks.
 
 All six copied, hooked chunks also passed this syntax check (exit 0):
 
@@ -133,23 +133,15 @@ The six DOL chunks changed by the entry hooks and therefore needing recompilatio
 
 Matching mod variants, if any, are certified and hooked too. `chunk_0195_text1_8030D6E0.c` is an SDK certificate dependency and receives no hook/change from this script. The new native source and `module_export.c` also compile; generated source should be prepared normally before compilation. This report supplies integration instructions without running the prohibited build script.
 
-## Commit delivery and sandbox limitation
+## Commits
 
-The shared worktree's Git index lives at `E:\Github\Wind-Waker-Recomp\.git\worktrees\Wind-Waker-Recomp-natives`. Staging failed with `index.lock: Permission denied`: that path is outside the permitted writable root. Consequently **the shared `codex/game-natives` branch could not be updated here** and still points at the base commit.
-
-Three small commits were instead created on an isolated `codex/game-natives` branch in a temporary Git repository inside this worktree and packaged as **`game-natives.bundle`**, with the base commit as its prerequisite:
+The worktree's Git index was outside the sandbox's writable root, so the three commits were made in a
+temporary repository and delivered as a bundle; they have since been imported onto the local branch
+`game-natives` (based on 5ca26dd), and the bundle removed:
 
 1. `Add bit-exact native game math paths and comparison harness`
 2. `Gate native game math entries on verified translations`
 3. `Document native validation results and integration`
 
-The bundle contains the source/test/report commits and no game module, copied chunks, assets, binaries, or scratch generators. Its temporary Git repository was removed after bundle verification. The working files are present for review, but the shared index is untouched.
-
-From a writable checkout on `codex/game-natives`, with these worktree file changes already preserved or reverted to avoid checkout conflicts, import the commits using:
-
-```powershell
-git fetch E:/Github/Wind-Waker-Recomp-natives/game-natives.bundle codex/game-natives
-git cherry-pick 5ca26dd293f4447d81177dfd4db22dbcf7ed216c..FETCH_HEAD
-```
-
-The fetch/cherry-pick integration was not executed here because it would write the read-only shared Git metadata. No push was performed.
+They contain the source, tests and this report: no game module, copied chunks, assets, binaries or scratch
+generators. Nothing was pushed.
