@@ -498,10 +498,11 @@ int main(void) {
         inputs.update(f"{digest}\n{int(self.mods)}\n".encode())
         # The Windows source steps (finish_tree) too: a changed step must start
         # from a fresh tree, since each leaves a chunk it has finished as it is.
+        # (package_release.py only packages a finished app: not an input.)
         for f in (sorted((ROOT / "scripts/mods").glob("*")) + sorted((ROOT / "scripts/windows").glob("*.py"))
                   + sorted((ROOT / "mods/widescreen").glob("*.gecko"))
                   + [ROOT / "mods/betterww/options.txt", Path(__file__)]):
-            if f.is_file():
+            if f.is_file() and f.name != "package_release.py":
                 inputs.update(f.read_bytes())
         inputs = inputs.hexdigest()
         current = o / "composite-src"
@@ -800,7 +801,11 @@ int main(void) {
 
         exe = self.build_app()
         start = time.monotonic()
-        module = self.compile_composite(work / "composite", "0", ["-fprofile-instr-generate"],
+        # At -O1: clang's front end places the counters (the profile does not
+        # depend on the optimization level), and at -O0 the instrumented module,
+        # every chunk with its prepaid block copies (fast_blocks.py) and the mod
+        # variants, was a 6.2 GB image, past the 4 GB a Windows image can be.
+        module = self.compile_composite(work / "composite", "1", ["-fprofile-instr-generate"],
                                         ["-fprofile-instr-generate"], "training-composite")
         print(f"instrumented game module built ({int(time.monotonic() - start) // 60} min)")
         for old in work.glob("run-*"):
