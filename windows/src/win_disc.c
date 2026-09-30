@@ -265,6 +265,11 @@ static int choose(const char* why, char* out, size_t size) {
         snprintf(out, size, "%s", testing);
         return testing[0] != '\0';
     }
+    char folder[MAX_PATH * 4];
+    snprintf(folder, sizeof folder, "%s", g_data);
+    const size_t length = strlen(folder);
+    if (length > 3 && folder[length - 1] == '\\')
+        folder[length - 1] = '\0';
     char text[2048];
     snprintf(text, sizeof text,
              "%s"
@@ -272,7 +277,7 @@ static int choose(const char* why, char* out, size_t size) {
              "GameCube disc for the USA (GZLE01).\n\n"
              "Choose your disc image next: an .iso or .gcm file, or a Dolphin .rvz. BlueWake checks it and "
              "prepares it once (an .rvz is unpacked to an ISO in %s), then remembers it.",
-             why, g_data);
+             why, folder);
     wchar_t message[4096];
     wide(text, message, 4096);
     if (MessageBoxW(NULL, message, L"BlueWake: choose your disc", MB_OKCANCEL | MB_ICONINFORMATION) != IDOK)
@@ -284,7 +289,7 @@ static int choose(const char* why, char* out, size_t size) {
         L"*.iso;*.gcm;*.rvz;*.wia;*.gcz;*.ciso;*.nfs\0All files\0*.*\0";
     dialog.lpstrFile = file;
     dialog.nMaxFile = MAX_PATH * 2;
-    dialog.lpstrTitle = L"Your The Wind Waker disc image (GameCube, USA)";
+    dialog.lpstrTitle = L"Choose your Wind Waker disc image (GameCube, USA)";
     dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER | OFN_NOCHANGEDIR | OFN_HIDEREADONLY;
     if (!GetOpenFileNameW(&dialog))
         return 0;
