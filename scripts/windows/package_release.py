@@ -91,6 +91,58 @@ disc you own.
 """
 
 
+# What every Windows 10 and 11 PC has; any other DLL a shipped binary imports
+# must be in the download (the Visual C++ runtime included: a PC without the
+# redistributable has none of it).
+SYSTEM_DLLS = {
+    "kernel32.dll", "user32.dll", "gdi32.dll", "advapi32.dll", "shell32.dll", "ole32.dll", "oleaut32.dll",
+    "imm32.dll", "version.dll", "winmm.dll", "setupapi.dll", "ntdll.dll", "bcrypt.dll", "bcryptprimitives.dll",
+    "comctl32.dll", "comdlg32.dll", "dxgi.dll", "d3d12.dll", "d3d11.dll", "dwmapi.dll", "uxtheme.dll", "hid.dll",
+    "cfgmgr32.dll", "ws2_32.dll", "crypt32.dll", "psapi.dll", "dbghelp.dll", "shlwapi.dll", "userenv.dll",
+    "secur32.dll", "ncrypt.dll", "powrprof.dll", "winhttp.dll", "iphlpapi.dll", "mfplat.dll", "avrt.dll",
+}
+
+
+def pe_imports(path):
+    """The DLL names a PE file imports (its import directory)."""
+    data = path.read_bytes()
+    pe = int.from_bytes(data[0x3C:0x40], "little")
+    if data[pe:pe + 4] != b"PE\0\0":
+        return []
+    sections = int.from_bytes(data[pe + 6:pe + 8], "little")
+    optional = pe + 24
+    size = int.from_bytes(data[pe + 20:pe + 22], "little")
+    magic = int.from_bytes(data[optional:optional + 2], "little")
+    directories = optional + (112 if magic == 0x20B else 96)
+    import_rva = int.from_bytes(data[directories + 8:directories + 12], "little")
+    table = optional + size
+    spans = []
+    for i in range(sections):
+        s = table + 40 * i
+        va, raw_size, raw = (int.from_bytes(data[s + o:s + o + 4], "little") for o in (12, 16, 20))
+        virtual_size = int.from_bytes(data[s + 8:s + 12], "little")
+        spans.append((va, max(virtual_size, raw_size), raw))
+
+    def offset(rva):
+        for va, length, raw in spans:
+            if va <= rva < va + length:
+                return raw + rva - va
+        raise ValueError(f"{path.name}: RVA {rva:#x} outside its sections")
+
+    names = []
+    if import_rva == 0:
+        return names
+    entry = offset(import_rva)
+    while True:
+        name_rva = int.from_bytes(data[entry + 12:entry + 16], "little")
+        if name_rva == 0:
+            break
+        start = offset(name_rva)
+        names.append(data[start:data.index(b"\0", start)].decode("ascii"))
+        entry += 20
+    return names
+
+
 def sha256(path):
     digest = hashlib.sha256()
     with open(path, "rb") as f:
@@ -141,6 +193,13 @@ def main():
     bad = [p for p in files if PRIVATE.search(p.name) or "game" in p.relative_to(stage).parts[:-1]]
     if bad:
         sys.exit("refusing to package: " + ", ".join(str(p.relative_to(stage)) for p in bad))
+    shipped = {p.name.lower() for p in stage.iterdir()}
+    missing = sorted({f"{name} (for {p.name})" for p in files if APP_FILES.search(p.name) for name in pe_imports(p)
+                      if name.lower() not in shipped and name.lower() not in SYSTEM_DLLS
+                      and not name.lower().startswith(("api-ms-win-", "ext-ms-win-"))})
+    if missing:
+        sys.exit("refusing to package: these DLLs are imported but neither in the download nor part of Windows: "
+                 + ", ".join(missing))
 
     zip_path = args.out / f"{NAME}-{args.version}-Windows-x64.zip"
     zip_path.unlink(missing_ok=True)

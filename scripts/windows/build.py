@@ -905,7 +905,8 @@ int main(void) {
         redist = Path(self.env.get("VCToolsRedistDir", "")) / "x64"
         crt = sorted(redist.glob("Microsoft.VC*.CRT")) if redist.is_dir() else []
         if crt:
-            for name in ("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"):
+            # msvcp140_atomic_wait: Dawn's std::atomic waits (webgpu_dawn.dll).
+            for name in ("msvcp140.dll", "msvcp140_atomic_wait.dll", "vcruntime140.dll", "vcruntime140_1.dll"):
                 if (crt[-1] / name).exists():
                     shutil.copy2(crt[-1] / name, app / name)
         else:
