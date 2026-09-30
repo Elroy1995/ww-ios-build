@@ -13,11 +13,16 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14          # Apple silicon runner
+    runs-on: macos-15          # Apple silicon runner
     timeout-minutes: 360       # GitHub's hard cap per job
 
     steps:
       - uses: actions/checkout@v4
+      - name: Select newest Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
 
       - name: Show and free disk space
         run: |
