@@ -56,6 +56,11 @@ load off those two workers or stops them waiting.
 | 18 | Fast scene changes | a door or exit 2.2 -> 0.63 s | `runtime/host/src/fast_load.c`, 0101 |
 | 19 | Quick doors | a door with a knob 5.1 -> 1.9 s | `runtime/host/src/quick_doors.c` |
 | 20 | Settings read again at start | saved 120 Hz and 16x anisotropy actually apply at launch | 0109 |
+| 21 | GX worker: derived pipeline state cached by a register version | 96 % of draws reuse it; with 22-24, a slower CPU's heavy view 23-26 -> 29-30 game FPS | 0115 |
+| 22 | GX worker: assembly totals only where read | a walk over every vertex's indices gone from the renderer's consumer | 0115 |
+| 23 | GX worker: pipeline and texture bind group lookups remembered | no `std::function` allocation, hash or lock for a draw that repeats the one before | 0115 |
+| 24 | Smooth Motion hand-off without a copy for repeated constants | a sequentially consistent fence only when the helper may sleep | 0115 |
+| 25 | Graphics threads' CPU time, slow presents and the CPU in the session log | `[fps] busy:`, `[fps-dip] threads:`, `[present-slow]`, `CPU cores:`; `CPU model` from CPUID | 0116 |
 
 Patch numbers are RecompCore changes (`patches/recompcore/NNNN-*.patch`, in RecompCore's
 `GXRuntime/graphics/aurora/lib/gfx/` unless noted).
@@ -316,11 +321,70 @@ Smooth Motion, its steps, the FPS overlay and forced anisotropy were read by sta
 the host applies the saved options, so a saved 120 came back as 60 and 16x anisotropy as none. The
 backend reads them again when it initialises.
 
+## The GX worker on a slower CPU (2026-09-30)
+
+A tester's Ryzen 5 5600X got about 25 frames a second from the Windows release. Measured on the i9-13900KF
+pinned to 12 of its efficiency cores (slower than a Zen 3 core one thread at a time), the release stood at
+Outset's spawn view (about 14,400 draws a frame) at 23 to 26 game frames a second, the game waiting 190 to 250
+ms a second for the GX worker at its frame's end, the worker itself only two thirds busy: the game's logic
+and the translation's tail took turns. The details, the profile and the verification are in
+[status/SLOW_CPU_2026-09-30.md](status/SLOW_CPU_2026-09-30.md).
+
+### 21. Derived pipeline state cached by a register version (0115, `gxcore.cpp`)
+
+`build_draw_plan_into` derived the whole pipeline key (TEV stages, lit channels, texgens, blending, depth)
+from the BP, CP and XF registers at every draw. The key is now cached, keyed by a version `apply()` changes
+whenever a BP, CP or VAT register changes value (the host's draw tag registers, which change at nearly every
+particle draw and feed no derived state, leave it alone) and by the draw's own XF, channel, light and texture
+values; the vertex walk is cached by its VCD and VAT. From the `native-60hz-pc` line (dc81247, f863821).
+96 percent of draws hit at Outset.
+
+### 22. Assembly totals only where read (0115, `render_sink.cpp`)
+
+The consumer under the gxcore renderer walked every vertex's indices of every draw for totals that only the
+shadow packet sink's frame comparison and the replay tools read, about 2 percent of the worker.
+
+### 23. Pipeline and texture bind group lookups remembered (0115, `common.cpp`, `gxcore_draw.cpp`)
+
+A draw's pipeline lookup built a `std::function` holding a copy of the whole pipeline config (a heap
+allocation) and hashed it before `find_pipeline` looked at the last pipeline; with early depth, twice a draw.
+The last config of each kind and its reference are remembered until the pipeline cache is shut down (a
+generation says so). A textured draw with the view and sampler state of the one before reuses its bind group
+within the frame, without the layout's, sampler's and bind group's hash and lock.
+
+### 24. Smooth Motion's hand-off (0115, `gxcore_draw.cpp`)
+
+Each draw's job copied its 2.8 KB constant block and paid for a sequentially consistent store and load (the
+store buffer drained behind the copy): 4 percent of the worker. A job whose constants repeat the job before's
+carries none (the helper keeps the last it was given), and the fence is paid only when enough jobs wait that
+the helper may be asleep.
+
+| E-cores, paced, Smooth Motion 60 | Standing at the spawn view | Game waiting for the worker | Running |
+| --- | --- | --- | --- |
+| Before | 23-26 game FPS | 190-250 ms a second | 26-27 |
+| After | 29-30 | 20-65 ms a second | 30 |
+
+Every frame is the same byte for byte: 19 of 19 captured frames with Smooth Motion off and 62 of 62 dumped
+real and in-between frames with it on, against the release; and with `DOL_GXCORE_DERIVED_VERIFY=1` (every
+hit derived again and compared) 34,851,442 hits through the whole new-game opening, 0 mismatches.
+
+### 25. The graphics threads in the session log (0116)
+
+`[fps]` ends with `busy: gx=N% interp=N% render=N%` and `[fps-dip]` with `threads:`, the CPU time the GX
+worker, Smooth Motion's helper and the render worker used that second; a present that holds the game thread
+100 ms or more writes `[present-slow]` with its parts (the worker's batch, the end of the frame, the window's
+events, the next frame's begin), and a slow event pump `[events-slow]` (SDL's pump or the host's handlers). The
+freezes of 0.4 to 1.2 s seen about one run in five on the test PC are SDL's pump waiting on another program:
+when the window's activation changes, Windows waits for the window losing it to answer. The CPU model comes from CPUID (the WMI query failed after the first launch's
+disc picker had set up COM security, and the log read `Unknown`), and `CPU cores:` gives cores and threads.
+
 ## Finding slow spots
 
 | Tool | What it shows |
 | --- | --- |
-| `[fps-dip]` (host, `fps_watch.c`, on unless `BLUEWAKE_FPS_WATCH=0`) | each second under 57 on screen: game speed, frames interpolated, rejected and unmatched draws, waits on the GX worker, presents and the GPU, stage, room and Link's position |
+| `[fps-dip]` (host, `fps_watch.c`, on unless `BLUEWAKE_FPS_WATCH=0`) | each second under 57 on screen: game speed, frames interpolated, rejected and unmatched draws, waits on the GX worker, presents and the GPU, the graphics threads' CPU, stage, room and Link's position |
+| `[fps] ... busy:` (Windows) | each second: the GX worker's, Smooth Motion helper's and render worker's CPU time |
+| `[present-slow]`, `[events-slow]` | a present that held the game thread 100 ms or more, and which part took the time; a slow event pump, SDL's or the host's |
 | `[interp-pace]` | each Smooth Motion pacing change and its cause |
 | `[render-slow]` (`DOL_RENDER_SLOW_MS`, default 60) | a render worker item, acquire or present that took that long |
 | `[gx-slow]` (`DOL_GX_SLOW_BATCH_MS`, default 20) | a GX batch that held the game that long, with the pipelines and textures it made; `[gx-slow-bytes]` adds its first bytes at 100 ms |
@@ -345,6 +409,10 @@ backend reads them again when it initialises.
   FP helpers, native skinning and vector math). The big game-thread gain, but only the Windows builder
   runs them; the Mac needs a builder step, a module rebuild and retraining, a stack-depth check and a
   route check.
+- **A submission thread for the GX worker** (2026-09-30). The FIFO parse and the plans on one thread,
+  Aurora's recording and the presents on another, a queue of plans between them. Exact, but no faster on the
+  E-cores (unpaced 32.2-32.8 game FPS against 33.7 without it) and 20 to 30 percent more CPU for the two
+  together: each draw's plan, about 4 KB with its vertices, crossed from one core's cache to the other's.
 - **Running the game's code on more cores.** Not possible: it is one CPU's code over shared memory in
   a fixed order.
 - **Remaining 120 Hz dips in Adanmae's heaviest views.** The limit there is presentation, not draw
@@ -363,6 +431,8 @@ backend reads them again when it initialises.
 | `DOL_AURORA_FRAME_INTERP_PACING` | 60 Hz only | 1 paces 120 Hz too, 0 turns pacing off |
 | `DOL_AURORA_PRESENT_CLOCK` | on | 0 keeps the old 60 Hz present timing |
 | `DOL_AURORA_GXCORE_BATCH` | on | 0 turns draw batching off |
+| `DOL_GXCORE_DERIVED_CACHE` | on | 0 derives the pipeline state at every draw |
+| `DOL_GXCORE_DERIVED_VERIFY` | off | 1 derives it again at every cache hit and reports a mismatch |
 | `DOL_AURORA_RENDER_SCALE` | display size | render resolution (the options menu) |
 | `BLUEWAKE_FADE_FRAMES` | 6 | a plain fade's length in game frames; 0 keeps the game's 26 |
 | `BLUEWAKE_FAST_FORWARD` | on | 0 keeps a scene change's black at real time |

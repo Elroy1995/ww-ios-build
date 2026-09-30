@@ -41,8 +41,16 @@ game at its full 30; F10 off and on again (30, then 60); `--no-smooth` 29.9; `--
 file 60 shown with the game at 30 (the display guard below); `--60hz` 59.9 game frames a second (lowest 59.4).
 120 FPS on a 120 Hz display was not measured on Windows in this pass.
 
+A slower CPU, 2026-09-30: a tester's Ryzen 5 5600X (with an RTX 3060) got about 25 FPS from that release. On
+the same i9 pinned to 12 of its efficiency cores (slower than a Zen 3 core one thread at a time, so a harsher
+stand-in), the release stood at Outset's spawn view (about 14,400 draws a frame) at 23 to 26 game frames a
+second, the game waiting 190 to 250 ms a second for the GX translation worker; six performance cores with their
+hyperthreads held 30. The worker's per-draw work is cheaper since (the derived pipeline state cached, lookups
+remembered, a lighter hand-off to Smooth Motion; [status/SLOW_CPU_2026-09-30.md](status/SLOW_CPU_2026-09-30.md)):
+29 to 30 there on the E-cores, every frame the same as before byte for byte.
+
 Not yet tried on Windows: a game controller, audio on other output devices, the HD texture packs, the later
-game, and other PCs (AMD CPUs and GPUs, Vulkan, slower CPUs).
+game, and other PCs (AMD CPUs and GPUs, Vulkan; slower CPUs only through the E-core stand-in above).
 
 ## Download and play
 
@@ -219,9 +227,12 @@ never touches it:
 - `settings.ini`: the settings menu's choices and the window's place
 - `Load\Textures\GZLE01`: where an HD texture pack goes
 - `logs\session-*.log`: the newest eight sessions, one line a second of speed and timing plus anything that went
-  wrong. Attach the relevant one to a bug report. If BlueWake crashes, the log says where. Each second has a
-  `[perf]` line (the game's retraces: 60 is full speed) and an `[fps]` line (frames shown, the game's own
-  frames, and how long the game waited for the graphics thread).
+  wrong. Attach the relevant one to a bug report. If BlueWake crashes, the log says where. It starts with the
+  `CPU model`, `CPU cores` and GPU lines. Each second has a `[perf]` line (the game's retraces: 60 is full
+  speed) and an `[fps]` line (frames shown, the game's own frames, how long the game waited for the graphics
+  thread, and how busy the GX worker, Smooth Motion's helper and the render worker were: one near 100 percent
+  is the thread the PC runs out of). A second under 57 frames adds an `[fps-dip]` line with the reason, and a
+  present that held the game 100 ms or more a `[present-slow]` line saying which part took the time.
 - Aurora's pipeline cache, so later launches start drawing sooner
 
 ## How the port works
@@ -272,6 +283,14 @@ clang (GNU driver, MSVC ABI) from Visual Studio.
   thread, in draw order, and the frame's end waits for it; a draw's matrix bank is carried by the camera's
   motion only for the matrices its vertices name; and the app is compiled for the same CPU level as the game
   module (AVX2 and FMA for that matrix work; the baseline build alone dropped the game to 28 FPS on Outset).
+- **The worker on a slower CPU.** The game waits for the worker at every frame's end, so the worker's work per
+  draw sets how slow a core can be. At Outset's spawn view (about 14,400 draws a frame) on the i9's efficiency
+  cores, standing in for a Ryzen 5600X, it held the game at 23 to 26 FPS. The pipeline state derived from the
+  GX registers is cached by a register version (96 percent of draws reuse it), a draw's pipeline and texture
+  bind group lookups are remembered for the next draw, the assembly totals only a validation sink reads are no
+  longer computed, and a draw that repeats its constants is handed to Smooth Motion's helper without a copy:
+  29 to 30 FPS there, the frames byte for byte the same
+  ([status/SLOW_CPU_2026-09-30.md](status/SLOW_CPU_2026-09-30.md)).
 - **The optimization profile's key.** The builder retrains when the game source (mods included), the parts of
   RecompCore compiled into the module (GXRuntime's CPU core and headers, the recompiler ABI), the compiler, the
   CPU level or the recipe change, not when the app or host code around the module does.
