@@ -32,7 +32,9 @@ jobs:
       - name: Download disc image
         env:
           DISC_URL: ${{ secrets.DISC_URL }}
-        run: curl -L --fail "$DISC_URL" -o "$RUNNER_TEMP/disc.iso"
+        run: |
+          pip3 install --break-system-packages gdown
+          gdown --fuzzy "$DISC_URL" -O "$RUNNER_TEMP/disc.iso"
 
       - name: Build IPA
         run: |
