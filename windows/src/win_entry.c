@@ -5,16 +5,20 @@
 // session log, then runs the unchanged host (runtime/host/src/main.c, compiled
 // with main renamed to bluewake_host_main).
 //
-// App folder (scripts/windows/build.py writes it; it is a personal build that
-// contains code translated from your disc, never share it):
+// App folder (scripts/windows/build.py writes it, and
+// scripts/windows/package_release.py makes a download of it without the game):
 //   BlueWake.exe, SDL3.dll, webgpu_dawn.dll    the host and its runtime DLLs
 //   gGZLE01_recomp.dll                         the translated game module
 //   game\GZLE01.iso                            the disc image the game reads
 //   game\main.dol, game\rels\                  prepared from that disc
 //   dsp\dsp_rom.bin, dsp\dsp_coef.bin          only for BLUEWAKE_DSP_MODE=lle
 //   initial_pipeline_cache.db                  Aurora's bundled pipeline seed
+//   nodtool.exe                                a download's: unpacks a .rvz
+// A download has no game\ folder: the first launch asks for the player's disc
+// and prepares it into the data folder (win_disc.c).
 // Player data, kept outside the app folder so a rebuild never touches it:
 //   %APPDATA%\BlueWake\GZLE01.card             the memory card (saves)
+//   %APPDATA%\BlueWake\disc.txt, game\         a download's disc, prepared
 //   %APPDATA%\BlueWake\sram.bin                the console's settings
 //   %APPDATA%\BlueWake\logs\session-*.log      the newest eight sessions
 // Every default is only a default: an environment variable that is already
@@ -40,6 +44,7 @@
 #include <SDL3/SDL.h>
 #include <aurora/aurora.h>
 
+#include "win_disc.h"
 #include "win_settings.h"
 
 int bluewake_host_main(int argc, char** argv);
@@ -508,7 +513,7 @@ static void usage(void) {
             "  --no-mouse-camera  keep the mouse out of the camera\n"
             "  --lle-audio        run the DSP's own microcode instead of the HLE ucode\n"
             "  --mods LIST        mods compiled into the module, by name\n"
-            "  --disc FILE        the disc image to read (default game\\GZLE01.iso)\n"
+            "  --disc FILE        the disc image to read (default: the one chosen at the first launch)\n"
             "  --module FILE      the translated game module (default gGZLE01_recomp.dll)\n"
             "Keyboard: arrows D-pad, J A, K B, U X, I Y, W/A/S/D stick,\n"
             "H/F/T/G C-stick, E/R L/R, Q Z, Return START. Game controllers work too.\n"
@@ -635,6 +640,11 @@ int main(int argc, char** argv) {
     // default folder, where they always were), so a second copy run with its
     // own BLUEWAKE_DATA_DIR never writes the same SQLite file at the same time.
     bw_default("DOL_AURORA_CACHE_DIR", g_data_dir);
+    // The game's files: the player's disc, asked for the first time (a
+    // download), or those beside the app (a folder the builder made).
+    const int disc = bw_disc_setup(g_exe_dir, g_data_dir);
+    if (disc != 0)
+        return disc < 0 ? 1 : 0;
     bw_default_path("BLUEWAKE_DOL", g_exe_dir, "game\\main.dol");
     bw_default_path("BLUEWAKE_RELS_DIR", g_exe_dir, "game\\rels");
     bw_default_path("BLUEWAKE_DISC", g_exe_dir, "game\\GZLE01.iso");
@@ -670,7 +680,7 @@ int main(int argc, char** argv) {
         char message[2048];
         snprintf(message, sizeof message,
                  "BlueWake cannot start: %s is missing.\n\n%s\n\n"
-                 "Build your own copy from your disc with\n"
+                 "Unpack the whole BlueWake download again, or build your own copy with\n"
                  "python scripts\\windows\\build.py YOUR_DISC.iso (or .rvz)",
                  missing, missing_path);
         fprintf(stderr, "[windows] %s\n", message);

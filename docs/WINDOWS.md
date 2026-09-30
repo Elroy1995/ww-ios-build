@@ -44,7 +44,28 @@ file 60 shown with the game at 30 (the display guard below); `--60hz` 59.9 game 
 Not yet tried on Windows: a game controller, audio on other output devices, the HD texture packs, the later
 game, and other PCs (AMD CPUs and GPUs, Vulkan, slower CPUs).
 
-## What you need
+## Download and play
+
+A release's `WindWakerRecomp-VERSION-Windows-x64.zip` is ready to play and has no game in it. Unpack it and run
+`BlueWake.exe`. The first launch asks for your disc image (the GameCube USA disc, `GZLE01` revision 0, as an
+`.iso`, `.gcm` or Dolphin `.rvz`), checks it, prepares it once and remembers it:
+
+- an `.iso` or `.gcm` is used where it is; an `.rvz` (or `.wia`, `.gcz`, `.ciso`, `.nfs`) is unpacked once, with
+  the bundled `nodtool.exe`, to `%APPDATA%\BlueWake\GZLE01.iso` (about 1.4 GB)
+- the disc id and `main.dol`'s SHA-1 (revision 0) are checked, and `main.dol` and the 415 RELs are prepared into
+  `%APPDATA%\BlueWake\game` by the iOS app's own importer (`apple/ios/src/disc_import.c`), byte for byte what the
+  builder prepares
+- `%APPDATA%\BlueWake\disc.txt` remembers the disc: later launches start straight away, and if the file has gone
+  BlueWake asks again. The settings' *Sound and files* tab has *Choose another disc image*.
+
+A folder the builder made (below) has the disc and prepared files beside the app and never asks. `--disc FILE`
+chooses a disc for one session.
+
+The zip is made from a builder's folder by `python scripts/windows/package_release.py VERSION`: it takes the
+app, the game module, the runtime DLLs, `nodtool.exe` and the licenses, leaves out the disc, `main.dol`, the
+RELs and anything else from the disc, and refuses to write the zip if any such file would be in it.
+
+## What you need to build it
 
 - Windows 10 or 11 on an x86-64 PC. The game module is compiled for `x86-64-v3` by default (AVX2, FMA, BMI2,
   MOVBE: Intel Haswell, AMD Zen or newer); the builder drops to an older level on older CPUs.
@@ -59,6 +80,8 @@ game, and other PCs (AMD CPUs and GPUs, Vulkan, slower CPUs).
   [Rust](https://rustup.rs). You can instead convert it in Dolphin (right-click the game, **Convert File...**,
   format ISO).
 - About 15 GB of free disk space (the converted disc, the generated source and the compiled module)
+
+(Playing a release zip needs none of this: Windows 10 or 11, a Direct3D 12 GPU, an AVX2 CPU and your disc image.)
 
 ## Build
 

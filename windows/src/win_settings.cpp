@@ -623,6 +623,18 @@ void tab_game() {
     ImGui::SameLine();
     if (ImGui::Button("Open the session logs"))
         open_folder(g_data_dir + "logs");
+    // A download's disc (win_disc.c): forgetting it asks again at the restart.
+    const std::string remembered = g_data_dir + "disc.txt";
+    if (GetFileAttributesA(remembered.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        ImGui::Spacing();
+        const char* disc = std::getenv("BLUEWAKE_DISC");
+        ImGui::TextDisabled("Your disc image:");
+        ImGui::TextUnformatted(disc != nullptr ? disc : "");
+        if (ImGui::Button("Choose another disc image (BlueWake starts again)")) {
+            DeleteFileA(remembered.c_str());
+            restart();
+        }
+    }
 }
 
 // The UI's size for this window: the display's scale (Windows' own, or more

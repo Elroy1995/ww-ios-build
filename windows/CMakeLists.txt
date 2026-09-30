@@ -75,7 +75,9 @@ set(BLUEWAKE_HOST_SOURCES
 # one the linker embeds.
 add_executable(BlueWake
     src/win_entry.c
+    src/win_disc.c
     src/win_settings.cpp
+    ${BLUEWAKE_REPO_ROOT}/apple/ios/src/disc_import.c
     src/bluewake.rc
     resources/BlueWake.manifest
     ${BLUEWAKE_HOST_SOURCES})
@@ -83,11 +85,15 @@ add_executable(BlueWake
 # owns main() and hands over after setting the defaults.
 set_source_files_properties(${BLUEWAKE_HOST_SRC}/main.c PROPERTIES
     COMPILE_DEFINITIONS "main=bluewake_host_main")
-target_link_libraries(BlueWake PRIVATE gxruntime GXRuntime::aurora bluewake_posix_compat winmm)
+# win_disc.c: the first launch's disc check and preparation (the iOS app's
+# importer), its progress window and the file picker.
+target_link_libraries(BlueWake PRIVATE gxruntime GXRuntime::aurora bluewake_posix_compat winmm
+    bcrypt comctl32 comdlg32)
 set_target_properties(BlueWake PROPERTIES LINKER_LANGUAGE CXX OUTPUT_NAME BlueWake)
 target_include_directories(BlueWake PRIVATE
     ${BLUEWAKE_COMPAT_INCLUDES}
     ${GXRUNTIME_DIR}/include
+    ${BLUEWAKE_REPO_ROOT}/apple/ios/src
     ${BLUEWAKE_REPO_ROOT}/ref/recompcore/Source/Core/Core/PowerPC/StaticRecomp)
 target_compile_options(BlueWake PRIVATE
     $<$<COMPILE_LANGUAGE:C,CXX>:${BLUEWAKE_COMPAT_FORCE_INCLUDE}>)
