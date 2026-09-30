@@ -1,11 +1,18 @@
 # Agent instructions
 
-## Releases paused
+## Releases
 
-No public releases until this repo is marked Clear in the maintainer's private release audit. Do not publish, re-publish, or restore any release, IPA, or app build, and do not add download links, until then.
+Public releases are allowed, including compiled app builds, following the model of the maintainer's
+other recompilation projects (Wave Race 64 Recompiled, the Donkey Kong Country recomps): the app
+contains the statically recompiled game code (the translated `gGZLE01_recomp.dylib`), and the player
+supplies their own legally obtained disc (GZLE01, revision 0), which the app checks before it runs.
 
-Before any future public release, every artifact must pass `scripts/release/check_public_assets.sh <artifact>...`, which runs `python3 ~/.codex/release-gate/release_gate.py` on the maintainer's machine. A failure is a stop, not a note.
+A release must never include:
 
-## Personal builds stay personal
+- the disc image, or game files, assets or textures extracted from it;
+- saves, memory card images or personal settings;
+- third-party texture packs or other content the project may not redistribute.
 
-The game module (`gGZLE01_recomp.dylib`) is translated from the player's own disc. An IPA or app that contains it is a personal build: never upload, attach, commit or link it anywhere. Public releases are source (plus notices) only; players make their own IPA with `scripts/ios/build_device.sh DISC.iso --ipa OUT.ipa`.
+Give each release a record of what it was built from (source revision, pinned dependencies,
+checksums), the licenses and third-party notices, and install notes. `scripts/ios/build_device.sh
+DISC.iso --ipa OUT.ipa` remains the way to build a personal iPad app from a disc.

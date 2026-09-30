@@ -3,10 +3,13 @@
 
   python scripts/windows/package_release.py VERSION [--app build/windows/BlueWake] [--out build/windows/release]
 
+VERSION as the Mac release names it (0.1.0).
+
 Copies the app (BlueWake.exe, the game module, the runtime DLLs, Aurora's
 pipeline seed, the DSP files) and nodtool.exe (which unpacks a Dolphin .rvz on
 the player's first launch) into WindWakerRecomp/, adds a README and the
-licenses, and writes WindWakerRecomp-VERSION-Windows-x64.zip and its .sha256.
+licenses, and writes WindWakerRecomp-VERSION-windows-x64.zip and its .sha256
+(named like the Mac release's WindWakerRecomp-VERSION-macos-arm64.zip).
 Nothing from the disc goes in: not the disc image, main.dol, the RELs or any
 save. The first launch asks for the player's own disc and prepares it
 (windows/src/win_disc.c). The script refuses to write the zip if a file from
@@ -156,7 +159,7 @@ def sha256(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("version", help="the release's version, e.g. v0.1.0")
+    parser.add_argument("version", help="the release's version, e.g. 0.1.0")
     parser.add_argument("--app", type=Path, default=ROOT / "build/windows/BlueWake")
     parser.add_argument("--out", type=Path, default=ROOT / "build/windows/release")
     parser.add_argument("--nodtool", type=Path, default=ROOT / "build/tools/nodtool/bin/nodtool.exe")
@@ -204,7 +207,7 @@ def main():
         sys.exit("refusing to package: these DLLs are imported but neither in the download nor part of Windows: "
                  + ", ".join(missing))
 
-    zip_path = args.out / f"{NAME}-{args.version}-Windows-x64.zip"
+    zip_path = args.out / f"{NAME}-{args.version}-windows-x64.zip"
     zip_path.unlink(missing_ok=True)
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for p in files:

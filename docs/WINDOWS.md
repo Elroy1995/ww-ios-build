@@ -46,7 +46,7 @@ game, and other PCs (AMD CPUs and GPUs, Vulkan, slower CPUs).
 
 ## Download and play
 
-A release's `WindWakerRecomp-VERSION-Windows-x64.zip` is ready to play and has no game in it. Unpack it and run
+A release's `WindWakerRecomp-VERSION-windows-x64.zip` is ready to play and has no game in it. Unpack it and run
 `BlueWake.exe`. The first launch asks for your disc image (the GameCube USA disc, `GZLE01` revision 0, as an
 `.iso`, `.gcm` or Dolphin `.rvz`), checks it, prepares it once and remembers it:
 
