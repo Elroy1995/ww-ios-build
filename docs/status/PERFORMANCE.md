@@ -1,5 +1,42 @@
 # BlueWake - Measured Performance Results
 
+Every optimization of 2026-09-28 and 29, with where it lives and how to turn it off, is catalogued in
+[docs/PERFORMANCE_OPTIMIZATIONS.md](../PERFORMANCE_OPTIMIZATIONS.md). Measured on an M3 Max MacBook Pro
+at 3456 x 2168 with the 4K texture pack unless noted.
+
+**2026-09-29 render worker encoding, batching and staging (recompcore 0110):** Adanmae at 120 Hz, encode
+3.65 / 6.85 / 24.7 -> 1.60 / 2.03 / 5.67 ms (median / p90 / worst), present 2.64 -> 1.43 ms, 107-110 FPS
+with dips to 68 -> 119-120. Batching: 6,400 -> 3,600 draws a frame in Adanmae, 11,800 -> 4,570 at sea,
+encode 1.57 -> 1.36 ms. In-between data through mapped staging buffers: 41-55 MB of zero-filled uploads a
+frame removed, render worker 35 -> 32 percent. Helper spinning 431 -> 22 samples. Forced GPU overload at
+60 Hz: game speed 77-85 percent -> 100 percent. Half-second drawable waits at full-screen switches: gone.
+**Not built:** Dusklight-style particle batching (about 100 particle draws a frame there; GPU about 42
+percent used; the game waits on presentation).
+
+**2026-09-29 steady present clock and 120 FPS (recompcore 0108):** 120 Hz presents typically 8.0 ms apart
+(bursts of 18 / 2.5 / 0.1 ms before, about half forced out early); 60 Hz 16.5 ms apart (alternating 22 and
+12 before). In-between uniform area 32 MB per step: a beach's 55 MB at 120 Hz now fits.
+
+**2026-09-29 Forsaken Fortress at 60 (recompcore 0102):** 17,500 draws a frame; GX worker 93 percent busy
+at about 40 ms a 33 ms frame. Repeated constants compared once, repeated blocks reused, indexed matrices
+blended only when read: blending 10.0 -> 1.8 ms a frame (benchmark, identical values); in play 49 -> 60.
+
+**2026-09-29 fast scene changes (host fast_load.c, recompcore 0101) and quick doors:** a door or exit
+2.2 -> 0.63 s (fade 0.87 -> 0.20, black 0.49 -> 0.25, fade in 0.87 -> 0.18); a door with a knob 5.1 -> 1.9 s.
+
+**2026-09-28 in-between frames through fast turns (recompcore 0100):** scripted turns of 11-32 degrees a
+game frame, 355 of 355 frames interpolated (up to a third lost before), unblended draws 5.9 -> 0.65
+percent, 59-60 FPS.
+
+**2026-09-28 Smooth Motion (recompcore 0098):** 29.9-30.0 -> 59.8-60.0 frames on screen, game logic
+identical (control at retrace 20,405 either way); CPU on the new-game route 195 -> 245 s (+25 percent,
+on the graphics threads), peak memory 1.26 -> 1.43 GB.
+
+**2026-09-28 PGO without the machine outliner (build.sh):** untrained chunks (486 of 748 with the local
+boot-to-control profile) were outlined into a call every three instructions (45,364 in d_a_bk's first
+chunk, 567 KB against 982 KB unoutlined); `-mllvm -enable-machine-outliner=never` with the profile. Frame
+rate effect not measured separately.
+
 **2026-09-24 actor search by id runs natively (host):** certified 280.0 -> 218.7 M instructions per play
 retrace (-21.9%), digest 83d2590d and stop rows unchanged; rendered 482 -> 450 M; simulator heavy view 54.0 ->
 57.4 retraces a second (median 16.8 ms). See CURRENT.md.

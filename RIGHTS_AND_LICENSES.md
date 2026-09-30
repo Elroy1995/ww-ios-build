@@ -14,8 +14,9 @@ GPLv3 is the license the parts BlueWake is built from allow together:
 - the translator, [DolRecomp](https://github.com/chrissotraidis/DolRecomp), and the Aurora renderer
   vendored in RecompCore keep their own licenses, recorded in those repositories
 
-BlueWake is released as source only. Every app is built by its player, on their own Mac, from their own
-disc ([docs/BUILD_YOUR_OWN.md](docs/BUILD_YOUR_OWN.md)).
+Wind Waker Recomp is released as source and as a Mac app ([docs/MACOS_RELEASE.md](docs/MACOS_RELEASE.md))
+that runs only with the player's own disc. iPad apps are built by their player, on their own Mac, from
+their own disc ([docs/BUILD_YOUR_OWN.md](docs/BUILD_YOUR_OWN.md)).
 
 ## Game content
 
@@ -24,12 +25,14 @@ Legend of Zelda: The Wind Waker*, its code, data, characters, names and imagery,
 trademark remain the property of their owners. BlueWake cannot grant rights it does not hold.
 
 This repository contains no disc image, playable game assets, saves or code translated from the game.
-Documentation screenshots depict the game and are not covered by BlueWake's software license. You
-supply your own legally obtained USA `GZLE01` revision 0 disc, and the app or IPA you build from it
-contains code translated from that disc (`Frameworks/gGZLE01_recomp.dylib`). That build is for your
-own use: do not share, upload or sell it. The software license does not grant any rights in
-game-derived code, and running a GPL-covered translator does not by itself place its output under
-the GPL.
+Documentation screenshots depict the game and are not covered by BlueWake's software license.
+
+The Mac release app contains code recompiled from the game (`Frameworks/gGZLE01_recomp.dylib`), as the
+maintainer's other recompilation projects do, but no disc image, game files, textures, audio or saves:
+it runs only with your own legally obtained USA `GZLE01` revision 0 disc, which it checks, and reads the
+game's data from that disc. An iPad app you build yourself contains code translated from your disc and
+is for your own use. The software license does not grant any rights in game-derived code, and running
+a GPL-covered translator does not by itself place its output under the GPL.
 
 ## Mods
 

@@ -49,6 +49,9 @@ extern "C" {
 void bluewake_mouse_camera_configure(bool enabled, double sensitivity, bool invert_y);
 void bluewake_mouse_camera_block(bool blocked);
 bool bluewake_mouse_camera_captured(void);
+// Reads the BLUEWAKE_STICK_CAMERA settings again (and the mouse's, which
+// bluewake_mouse_camera_configure then sets back to the menu's).
+void bluewake_mouse_camera_reload(void);
 // runtime/host/src/simulation_mode.h: the experimental 60 Hz gameplay.
 bool bluewake_simulation_supported(void);
 bool bluewake_simulation_enabled(void);
@@ -85,6 +88,11 @@ struct Settings {
     double mouse_sensitivity = 1.0;
     bool mouse_invert_y = false;
     bool pad_invert_x = false, pad_invert_y = false;
+    // The fast right-stick camera (mouse_camera.h): the stick turns the view
+    // and aims directly, instead of the game's eased C-stick camera.
+    bool stick_camera = true;
+    int stick_speed = 360;      // degrees a second at full tilt
+    int stick_aim_speed = 180;  // the same when aiming
     // At the next launch.
     std::string aspect = "4:3";
     bool keep_aspect = true;
@@ -150,6 +158,9 @@ void load_file() {
         else if (k == "mouse_invert_y") d.mouse_invert_y = parse_bool(v);
         else if (k == "controller_invert_x") d.pad_invert_x = parse_bool(v);
         else if (k == "controller_invert_y") d.pad_invert_y = parse_bool(v);
+        else if (k == "stick_camera") d.stick_camera = parse_bool(v);
+        else if (k == "stick_camera_speed") d.stick_speed = std::clamp(std::atoi(v.c_str()), 60, 1080);
+        else if (k == "stick_aim_speed") d.stick_aim_speed = std::clamp(std::atoi(v.c_str()), 30, 720);
         else if (k == "aspect") d.aspect = (v == "16:9" || v == "16:10") ? v : "4:3";
         else if (k == "keep_aspect") d.keep_aspect = parse_bool(v);
         else if (k == "betterww") d.betterww = parse_bool(v);
@@ -180,6 +191,8 @@ void save_file() {
     std::fprintf(f, "mouse_camera=%d\nmouse_sensitivity=%.2f\nmouse_invert_y=%d\n", d.mouse_camera,
                  d.mouse_sensitivity, d.mouse_invert_y);
     std::fprintf(f, "controller_invert_x=%d\ncontroller_invert_y=%d\n", d.pad_invert_x, d.pad_invert_y);
+    std::fprintf(f, "stick_camera=%d\nstick_camera_speed=%d\nstick_aim_speed=%d\n", d.stick_camera, d.stick_speed,
+                 d.stick_aim_speed);
     std::fprintf(f, "aspect=%s\nkeep_aspect=%d\nbetterww=%d\nhd_textures=%d\nlle_audio=%d\n", d.aspect.c_str(),
                  d.keep_aspect, d.betterww, d.hd_textures, d.lle_audio);
     std::fprintf(f, "native_60hz=%d\n", d.native_60hz);
@@ -346,6 +359,20 @@ void note_refresh(SDL_Window* w) {
         g_refresh = mode->refresh_rate;
 }
 
+// The fast right-stick camera reads the controller through SDL itself, so the
+// controller's inversion (apply_controller, for the game's own C-stick) is its
+// BLUEWAKE_STICK_CAMERA_INVERT_X and _Y too.
+void apply_stick() {
+    const Settings& d = g_saved;
+    _putenv_s("BLUEWAKE_STICK_CAMERA", d.stick_camera ? "1" : "0");
+    _putenv_s("BLUEWAKE_STICK_CAMERA_SPEED", std::to_string(d.stick_speed).c_str());
+    _putenv_s("BLUEWAKE_STICK_AIM_SPEED", std::to_string(d.stick_aim_speed).c_str());
+    _putenv_s("BLUEWAKE_STICK_CAMERA_INVERT_X", d.pad_invert_x ? "1" : "0");
+    _putenv_s("BLUEWAKE_STICK_CAMERA_INVERT_Y", d.pad_invert_y ? "1" : "0");
+    bluewake_mouse_camera_reload();
+    bluewake_mouse_camera_configure(d.mouse_camera, d.mouse_sensitivity, d.mouse_invert_y);
+}
+
 void apply_live() {
     const Settings& d = g_saved;
     note_refresh(game_window());
@@ -501,10 +528,23 @@ void tab_controls() {
         changed();
     }
     ImGui::Spacing();
+    bool stick = ImGui::Checkbox("Fast right-stick camera and aiming (like the mouse; click the stick for first person)",
+                                 &d.stick_camera);
+    ImGui::BeginDisabled(!d.stick_camera);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16);
+    stick |= ImGui::SliderInt("Right-stick turn speed", &d.stick_speed, 120, 720, "%d degrees a second");
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16);
+    stick |= ImGui::SliderInt("Right-stick aim speed (first person, items)", &d.stick_aim_speed, 60, 480,
+                              "%d degrees a second");
+    ImGui::EndDisabled();
+    ImGui::TextDisabled(d.stick_camera ? "    In the telescope and the Picto Box the left stick (or the D-pad) zooms."
+                                       : "    Off: the game's own eased right-stick camera.");
     bool pad = ImGui::Checkbox("Controller: camera stick left and right inverted", &d.pad_invert_x);
     pad |= ImGui::Checkbox("Controller: camera stick up and down inverted", &d.pad_invert_y);
-    if (pad) {
+    if (pad)
         apply_controller();
+    if (pad || stick) {
+        apply_stick();
         changed();
     }
     ImGui::Spacing();
@@ -527,7 +567,8 @@ void tab_controls() {
         }
         ImGui::EndTable();
     }
-    ImGui::TextDisabled("Game controllers work as they are plugged in (Xbox, PlayStation, Switch Pro, ...).");
+    ImGui::TextDisabled("Game controllers work as they are plugged in (Xbox, PlayStation, Switch Pro, ...):");
+    ImGui::TextDisabled("the right stick turns the camera and aims, and its click is first person (and back out).");
 }
 
 void tab_enhancements() {
@@ -886,6 +927,21 @@ extern "C" void bw_settings_apply_launch(void) {
         d.mouse_sensitivity = std::clamp(std::atof(std::getenv("BLUEWAKE_MOUSE_SENSITIVITY")), 0.1, 10.0);
     if (env_set("BLUEWAKE_MOUSE_INVERT_Y"))
         d.mouse_invert_y = std::getenv("BLUEWAKE_MOUSE_INVERT_Y")[0] == '1';
+    // The right-stick camera: the environment wins for the session (and is
+    // shown); otherwise the host reads the file's choice from it.
+    if (env_set("BLUEWAKE_STICK_CAMERA"))
+        d.stick_camera = std::getenv("BLUEWAKE_STICK_CAMERA")[0] != '0';
+    if (env_set("BLUEWAKE_STICK_CAMERA_SPEED"))
+        d.stick_speed = std::clamp(std::atoi(std::getenv("BLUEWAKE_STICK_CAMERA_SPEED")), 60, 1080);
+    if (env_set("BLUEWAKE_STICK_AIM_SPEED"))
+        d.stick_aim_speed = std::clamp(std::atoi(std::getenv("BLUEWAKE_STICK_AIM_SPEED")), 30, 720);
+    env_default("BLUEWAKE_STICK_CAMERA", d.stick_camera ? "1" : "0");
+    env_default("BLUEWAKE_STICK_CAMERA_SPEED", std::to_string(d.stick_speed));
+    env_default("BLUEWAKE_STICK_AIM_SPEED", std::to_string(d.stick_aim_speed));
+    if (d.pad_invert_x)
+        env_default("BLUEWAKE_STICK_CAMERA_INVERT_X", "1");
+    if (d.pad_invert_y)
+        env_default("BLUEWAKE_STICK_CAMERA_INVERT_Y", "1");
     if (d.aspect != "4:3")
         env_default("BLUEWAKE_ASPECT", d.aspect);
     env_default("DOL_AURORA_ASPECT_FIT", d.keep_aspect ? "1" : "0");

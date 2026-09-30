@@ -264,6 +264,7 @@ saves only.
 - [Current status](docs/status/CURRENT.md): the engineering log, newest first
 - [Mac release](docs/MACOS_RELEASE.md) and
   [Windows](https://github.com/elliotttate/Wind-Waker-Recomp/blob/windows-release/docs/WINDOWS.md): installing, playing and building
+- [Performance optimizations](docs/PERFORMANCE_OPTIMIZATIONS.md): every speed-up, what it measured, and how to turn it off
 - [Build your own BlueWake](docs/BUILD_YOUR_OWN.md): the iPhone and iPad guide
 - [The Builder](docs/BUILDER.md): how the build works, and reusing it for other ports
 - [Device build](docs/status/DEVICE_BUILD.md): signing, installing and build options

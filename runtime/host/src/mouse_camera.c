@@ -5,6 +5,7 @@
 #include "gxruntime/aurora_backend.h"
 
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_video.h>
@@ -29,6 +30,7 @@
 enum {
     kCameraPointer = 0x803CA718u,
     kCameraDraw = BLUEWAKE_MOUSE_CAMERA_DRAW,
+    kCameraBump = BLUEWAKE_MOUSE_CAMERA_BUMP,
     kLookatEye = 0xD8u,
     kLookatCenter = 0xE4u,
     kCameraAngleY = 0x232u, // camera_class::mAngle.y (fopCamM_GetAngleY)
@@ -53,6 +55,7 @@ enum {
     kSubjectFree = 0x37Cu,  // m37C: the aim is the player's (not steered at a target)
     kSubjectPitch = 0x388u, // m388: pitch / p19, -1..1 (positive looks down)
     kSubjectZoom = 0x38Cu,  // m38C: telescope / Picto Box zoom, 0..1 (1x..9x)
+    kSubjectStep = 0x3C4u,  // m3C4: the C-stick's push down in first person, 0, 1 (a little), 2 (out)
     kCameraStyle = 0x750u,  // mCamParam.mpStyle -> dCamParam_c::styles[mCurStyle]
     kEventMode = 0x803C9EA2u, // g_dComIfG_gameInfo.play.mEvtCtrl's mode
     kPlayerPointer = 0x803CA74Cu,
@@ -141,6 +144,58 @@ static unsigned g_test_count;
 // views can be tried on a save that does not have it yet.
 static int g_test_item = -1;
 static unsigned long long g_test_item_retrace = 900;
+
+// The right stick as the camera (on unless BLUEWAKE_STICK_CAMERA=0). The game's own
+// C-stick camera (dCamera_c's manual camera) eases its turn in and out and
+// only starts past a quarter of the stick's tilt, which feels floaty next to
+// the mouse. In this mode, wherever the mouse would turn the camera (the
+// follow camera, the player in control), the stick turns it the same way,
+// setting the view's angles directly: a turn rate from its tilt, no easing,
+// and the view held where it leaves it. The game then never sees the stick
+// there. Its click is the C-stick's push up (first person), and in first
+// person the C-stick's push down (back out). In first person and when aiming
+// an item it aims, as the mouse does (aim_frame); in the telescope and the
+// Picto Box, whose zoom the C-stick's up and down were, the left stick's up and
+// down zoom instead (it no longer aims there), as do the D-pad's. Elsewhere
+// (Z-targeting, the boat's special cameras, cutscenes) it is the game's C-stick.
+// With no controller, or one left resting, nothing changes.
+static bool g_stick_on;
+static double g_stick_speed = 360.0;     // degrees a second at full tilt, left and right
+static double g_stick_aim_speed = 180.0; // the same when aiming (first person and items)
+static double g_stick_invert_x = 1.0, g_stick_invert_y = 1.0;
+// Tilt (0..1) inside which the stick does nothing, and from which it turns at
+// full speed; up and down turn at this share of left and right's speed.
+static const double kStickDeadZone = 0.12, kStickFull = 0.95, kStickPitchShare = 0.6;
+// Past this tilt the stick is the camera's, not the game's C-stick.
+static const double kStickInUse = 0.05;
+// A game frame (camera_draw runs once each): the stick turns by game time, so
+// a steady tilt turns the same amount every frame and the in-between frames
+// show an even turn.
+static const double kGameFrameSeconds = 1.0 / 29.97;
+static bool g_stick_owns;       // the last camera_draw was the follow camera, the player in control
+static bool g_stick_aims;       // ... or an aiming view: the stick aims, as the mouse does (aim_frame)
+static bool g_stick_zooms;      // ... one that zooms (telescope, Picto Box): the left stick zooms
+// Held on a controller's D-pad in the telescope or the Picto Box (whose zoom
+// the C-stick's up and down were), or the left stick pushed all the way: this
+// much of their 1x-9x zoom a second.
+static const double kPadZoomPerSecond = 1.2;
+static bool g_first_person;     // ... or first person (C-stick up's view, SS01)
+static bool g_stick_click_down; // the stick's click, as last read
+static unsigned long long g_exit_from; // retrace a click in first person started its push down
+static int g_subject_step;             // first person's push-down step (subjectCamera's m3C4), or -1
+
+// BLUEWAKE_STICK_TEST=retrace:x:y:length[:click[:zoom[:left_y]]],... (testing
+// only): the right stick's tilt (SDL's axes, -1..1, y down), its click, the
+// D-pad's zoom (1 up, -1 down) and the left stick's up and down from that
+// retrace for `length`.
+typedef struct {
+    unsigned long long start, length;
+    double x, y;
+    int click, zoom;
+    double left_y;
+} TestStick;
+static TestStick g_stick_test[16];
+static unsigned g_stick_test_count;
 
 static void set_captured(bool captured) {
     SDL_Window* window = g_window != 0 ? SDL_GetWindowFromID(g_window) : NULL;
@@ -244,9 +299,35 @@ void bluewake_mouse_camera_block(bool blocked) {
 
 bool bluewake_mouse_camera_captured(void) { return g_captured; }
 
+bool bluewake_mouse_camera_scripted(void) { return g_stick_test_count > 0u; }
+
 void bluewake_mouse_camera_release(void) {
     if (g_captured)
         set_captured(false);
+}
+
+static bool env_is(const char* name, char value) {
+    const char* text = getenv(name);
+    return text != NULL && text[0] == value;
+}
+
+static void read_stick_settings(void) {
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    // Not tried with the touch controls yet: off unless asked for.
+    g_stick_on = env_is("BLUEWAKE_STICK_CAMERA", '1');
+#else
+    g_stick_on = !env_is("BLUEWAKE_STICK_CAMERA", '0');
+#endif
+    const char* speed = getenv("BLUEWAKE_STICK_CAMERA_SPEED");
+    g_stick_speed = speed != NULL && atof(speed) > 0.0 ? atof(speed) : 360.0;
+    const char* aim = getenv("BLUEWAKE_STICK_AIM_SPEED");
+    g_stick_aim_speed = aim != NULL && atof(aim) > 0.0 ? atof(aim) : 180.0;
+    g_stick_invert_x = env_is("BLUEWAKE_STICK_CAMERA_INVERT_X", '1') ? -1.0 : 1.0;
+    g_stick_invert_y = env_is("BLUEWAKE_STICK_CAMERA_INVERT_Y", '1') ? -1.0 : 1.0;
+    if (!g_stick_on) {
+        g_stick_owns = g_stick_aims = g_stick_zooms = g_first_person = false;
+        g_exit_from = 0;
+    }
 }
 
 void bluewake_mouse_camera_reload(void) {
@@ -260,6 +341,7 @@ void bluewake_mouse_camera_reload(void) {
     g_sensitivity = sensitivity != NULL && atof(sensitivity) > 0.0 ? atof(sensitivity) : 1.0;
     const char* invert = getenv("BLUEWAKE_MOUSE_INVERT_Y");
     g_invert_y = invert != NULL && invert[0] == '1' ? -1.0 : 1.0;
+    read_stick_settings();
 }
 
 void bluewake_mouse_camera_attach(CPUState* cpu) {
@@ -270,6 +352,29 @@ void bluewake_mouse_camera_attach(CPUState* cpu) {
     const char* invert = getenv("BLUEWAKE_MOUSE_INVERT_Y");
     if (invert != NULL && invert[0] == '1')
         g_invert_y = -1.0;
+    read_stick_settings();
+    if (g_stick_on)
+        fprintf(stderr,
+                "[stick] the right stick turns the camera directly (%.0f degrees a second) and aims (%.0f); its "
+                "click is first person; the left stick zooms the telescope and the Picto Box\n",
+                g_stick_speed, g_stick_aim_speed);
+    const char* stick_test = getenv("BLUEWAKE_STICK_TEST");
+    for (const char* p = stick_test; p != NULL && *p != '\0' && g_stick_test_count < 16u;) {
+        TestStick move = {0};
+        int used = 0;
+        if (sscanf(p, "%llu:%lf:%lf:%llu%n", &move.start, &move.x, &move.y, &move.length, &used) != 4)
+            break;
+        p += used;
+        if (*p == ':' && sscanf(p, ":%d%n", &move.click, &used) == 1)
+            p += used;
+        if (*p == ':' && sscanf(p, ":%d%n", &move.zoom, &used) == 1)
+            p += used;
+        if (*p == ':' && sscanf(p, ":%lf%n", &move.left_y, &used) == 1)
+            p += used;
+        g_stick_test[g_stick_test_count++] = move;
+        if (*p == ',')
+            ++p;
+    }
     const char* trace = getenv("BLUEWAKE_MOUSE_TRACE");
     g_trace = trace != NULL && trace[0] == '1';
     const char* test = getenv("BLUEWAKE_MOUSE_TEST");
@@ -294,9 +399,127 @@ void bluewake_mouse_camera_attach(CPUState* cpu) {
     }
 }
 
+// The right stick of whichever controller is tilted most (SDL's axes, -1..1,
+// y down), whether any controller's right stick is clicked, and when asked
+// for, the D-pad's zoom (1 up, -1 down, 0) and the left stick of whichever
+// controller has it tilted most.
+static void read_stick_left(double* x, double* y, bool* click, int* zoom, double* left_x, double* left_y) {
+    *x = *y = 0.0;
+    *click = false;
+    if (zoom != NULL)
+        *zoom = 0;
+    if (left_x != NULL)
+        *left_x = *left_y = 0.0;
+    for (unsigned i = 0; i < g_stick_test_count; ++i) {
+        const TestStick* move = &g_stick_test[i];
+        if (g_retrace >= move->start && g_retrace < move->start + move->length) {
+            *x = move->x;
+            *y = move->y;
+            *click = move->click != 0;
+            if (zoom != NULL)
+                *zoom = move->zoom;
+            if (left_x != NULL)
+                *left_y = move->left_y;
+            return;
+        }
+    }
+    int count = 0;
+    SDL_JoystickID* ids = SDL_GetGamepads(&count);
+    double most = 0.0;
+    for (int i = 0; ids != NULL && i < count; ++i) {
+        SDL_Gamepad* pad = SDL_GetGamepadFromID(ids[i]);
+        if (pad == NULL)
+            continue;
+        if (SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_RIGHT_STICK))
+            *click = true;
+        if (zoom != NULL && *zoom == 0)
+            *zoom = SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_UP)     ? 1
+                    : SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_DOWN) ? -1
+                                                                               : 0;
+        double px = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHTX) / 32767.0;
+        double py = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHTY) / 32767.0;
+        px = px < -1.0 ? -1.0 : px;
+        py = py < -1.0 ? -1.0 : py;
+        if (px * px + py * py > most) {
+            most = px * px + py * py;
+            *x = px;
+            *y = py;
+        }
+        if (left_x != NULL) {
+            double lx = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX) / 32767.0;
+            double ly = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY) / 32767.0;
+            lx = lx < -1.0 ? -1.0 : lx;
+            ly = ly < -1.0 ? -1.0 : ly;
+            if (lx * lx + ly * ly > *left_x * *left_x + *left_y * *left_y) {
+                *left_x = lx;
+                *left_y = ly;
+            }
+        }
+    }
+    SDL_free(ids);
+}
+
+static void read_stick(double* x, double* y, bool* click, int* zoom) {
+    read_stick_left(x, y, click, zoom, NULL, NULL);
+}
+
+// The turn (degrees) a tilt makes over `seconds`: nothing inside the dead zone,
+// then gentle near the middle for fine aim (30 percent linear, 70 quadratic)
+// and full speed at the edge. Right turns the view right and up looks up, as
+// the mouse does.
+static void stick_turn(double x, double y, double seconds, double speed, double* yaw, double* pitch) {
+    *yaw = *pitch = 0.0;
+    const double tilt = sqrt(x * x + y * y);
+    if (tilt <= kStickDeadZone)
+        return;
+    double n = (tilt - kStickDeadZone) / (kStickFull - kStickDeadZone);
+    n = n > 1.0 ? 1.0 : n;
+    const double degrees = speed * (0.3 * n + 0.7 * n * n) * seconds / tilt;
+    *yaw = x * degrees * g_stick_invert_x;
+    *pitch = y * degrees * kStickPitchShare * g_stick_invert_y;
+}
+
 void bluewake_mouse_camera_pad(DolPadState* pad) {
     if (g_click)
         pad->button |= 0x0100u; // PAD_BUTTON_A
+    if (!g_stick_on)
+        return;
+    double x, y, left_x, left_y;
+    bool click;
+    read_stick_left(&x, &y, &click, NULL, &left_x, &left_y);
+    const bool pressed = click && !g_stick_click_down;
+    if (g_stick_zooms && sqrt(left_x * left_x + left_y * left_y) > kStickInUse)
+        pad->stick_x = pad->stick_y = 0; // it zooms (aim_frame), so it does not also aim
+    g_stick_click_down = click;
+    if (g_stick_owns || g_stick_aims) {
+        // view_frame turns the view by the stick, and aim_frame aims by it:
+        // the game's own C-stick (its eased camera, first person's push down
+        // out, the telescope's zoom) must not also take it. The keyboard's
+        // C-stick still goes through while the stick rests.
+        if (sqrt(x * x + y * y) > kStickInUse)
+            pad->substick_x = pad->substick_y = 0;
+    }
+    if (g_stick_owns && click) {
+        pad->substick_x = 0; // the click is the push up: first person
+        pad->substick_y = 127;
+    } else if (g_first_person && pressed && g_exit_from == 0) {
+        g_exit_from = g_retrace;
+    }
+    if (g_exit_from != 0) {
+        // Out of first person: subjectCamera wants the stick a little down
+        // (its m3C4 goes to 1), then past three quarters (to 2, which asks the
+        // player to leave). -30 and -127 come out at about -0.25 and -1 after
+        // PADClamp. It lets go as soon as the game has taken each step: held
+        // once first person has ended, the follow camera would take it for its
+        // own push down and switch to the manual camera.
+        const unsigned long long n = g_retrace - g_exit_from;
+        if (g_first_person && g_subject_step < 2 && n < 30u) {
+            pad->substick_x = 0;
+            pad->substick_y = g_subject_step < 1 ? -30 : -127;
+        } else {
+            g_exit_from = 0;
+        }
+    }
 }
 
 static float read_f32(CPUState* cpu, u32 address) {
@@ -423,16 +646,36 @@ static void aim_frame(CPUState* cpu, u32 player) {
         g_sum_x = g_sum_y = g_wheel = 0.0;
         return;
     }
-    if (g_sum_x == 0.0 && g_sum_y == 0.0 && g_wheel == 0.0)
+    // The fast stick camera's right stick aims as the mouse does (at its own
+    // speed, a game frame's worth each update), and the D-pad zooms.
+    double stick_yaw = 0.0, stick_pitch = 0.0, pad_zoom = 0.0;
+    if (g_stick_on) {
+        double x, y, left_x, left_y;
+        bool click;
+        int zoom;
+        read_stick_left(&x, &y, &click, &zoom, &left_x, &left_y);
+        stick_turn(x, y, kGameFrameSeconds, g_stick_aim_speed, &stick_yaw, &stick_pitch);
+        // The left stick's up zooms in, as far as it is pushed (past the
+        // dead zone); the D-pad at full speed.
+        double push = -left_y;
+        push = fabs(push) <= kStickDeadZone ? 0.0 : (push - copysign(kStickDeadZone, push)) / (1.0 - kStickDeadZone);
+        if (zoom != 0)
+            push = zoom;
+        pad_zoom = (mem_read16(cpu, style + kStyleFlags) & kStyleZoom) != 0u
+                       ? push * kPadZoomPerSecond * kGameFrameSeconds
+                       : 0.0;
+    }
+    if (g_sum_x == 0.0 && g_sum_y == 0.0 && g_wheel == 0.0 && stick_yaw == 0.0 && stick_pitch == 0.0 &&
+        pad_zoom == 0.0)
         return;
     const bool ready = camera_ready(cpu, camera);
-    // The wheel: the telescope's and the Picto Box's own zoom (the C-stick's).
-    // It zooms while the game holds the aim too: Aryll's telescope lesson
-    // locks the view on the postman and waits for a full zoom.
-    if (ready && g_wheel != 0.0) {
+    // The wheel (and the D-pad): the telescope's and the Picto Box's own zoom
+    // (the C-stick's). It zooms while the game holds the aim too: Aryll's
+    // telescope lesson locks the view on the postman and waits for a full zoom.
+    if (ready && (g_wheel != 0.0 || pad_zoom != 0.0)) {
         const float level = read_f32(cpu, camera + kSubjectZoom);
         if ((mem_read16(cpu, style + kStyleFlags) & kStyleZoom) != 0u && level >= 0.0f && level <= 1.0f) {
-            double next = level + g_wheel * kScopeZoomPerNotch;
+            double next = level + g_wheel * kScopeZoomPerNotch + pad_zoom;
             next = next < 0.0 ? 0.0 : next > 1.0 ? 1.0 : next;
             write_f32(cpu, camera + kSubjectZoom, (float)next);
         }
@@ -459,12 +702,13 @@ static void aim_frame(CPUState* cpu, u32 player) {
     const bool zooms = (mem_read16(cpu, style + kStyleFlags) & kStyleZoom) != 0u;
     const float zoom_level = read_f32(cpu, camera + kSubjectZoom);
     const bool zoom_known = zoom_level >= 0.0f && zoom_level <= 1.0f;
-    const double scale = kDegreesPerPoint * g_sensitivity / (zooms && zoom_known ? 1.0 + 8.0 * zoom_level : 1.0);
+    const double zoom_div = zooms && zoom_known ? 1.0 + 8.0 * zoom_level : 1.0;
+    const double scale = kDegreesPerPoint * g_sensitivity / zoom_div;
 
     // Yaw: pointer right turns right (shape_angle.y goes down, as with the
     // stick). It turns during the view's entry too, which follows the
     // player's facing.
-    const double turn = -g_sum_x * scale * kAngleUnits + g_aim_yaw_rest;
+    const double turn = -(g_sum_x * scale + stick_yaw / zoom_div) * kAngleUnits + g_aim_yaw_rest;
     const int du = (int)lrint(turn);
     g_aim_yaw_rest = turn - du;
     g_sum_x = 0.0;
@@ -480,7 +724,7 @@ static void aim_frame(CPUState* cpu, u32 player) {
     const float range = style_param(cpu, style, 19); // p19: the tilt's limit, degrees
     const float before = read_f32(cpu, camera + kSubjectPitch);
     if (range > 1.0f && range < 180.0f && before >= -1.0f && before <= 1.0f && (status & kStatusCrawl) == 0u) {
-        float after = (float)(before + g_sum_y * scale * g_invert_y / range);
+        float after = (float)(before + (g_sum_y * scale * g_invert_y + stick_pitch / zoom_div) / range);
         after = after < -1.0f ? -1.0f : after > 1.0f ? 1.0f : after;
         // As CalcSubjectAngle does for the stick: with the eye down at the
         // ground or the water, the tilt may only come back toward level.
@@ -562,10 +806,59 @@ static void zoom_frame(CPUState* cpu, u32 camera, bool player_camera) {
     write_f32(cpu, camera + kFollowMaxRadius, (float)(far * before_ease));
 }
 
+// At bumpCheck's entry, once a frame in dCamera_c::Run: the camera's routine
+// (the follow camera) has eased mViewCache, and bumpCheck is about to make the
+// frame's eye from it, pulling it in along the line from Link where that line
+// meets a wall or the ground and lifting it out of the water. The mouse's and
+// the stick's angles go into mViewCache here, so that eye is theirs and the
+// game keeps it clear; placed at camera_draw instead, it went wherever the
+// angles said, into the ground or under the sea when tilted low.
+static void view_frame(CPUState* cpu, u32 camera) {
+    if (aiming_view(cpu, camera) || !camera_free(cpu, camera))
+        return; // camera_frame, at the draw, lets go
+    double stick_yaw = 0.0, stick_pitch = 0.0;
+    if (g_stick_on) {
+        double x, y;
+        bool click;
+        read_stick(&x, &y, &click, NULL);
+        stick_turn(x, y, kGameFrameSeconds, g_stick_speed, &stick_yaw, &stick_pitch);
+    }
+    if (g_sum_x == 0.0 && g_sum_y == 0.0 && stick_yaw == 0.0 && stick_pitch == 0.0 && !g_held)
+        return;
+    if (!g_held) {
+        g_pitch = (s16)mem_read16(cpu, camera + kViewPitch) / kAngleUnits;
+        g_yaw = (s16)mem_read16(cpu, camera + kViewYaw) / kAngleUnits;
+        g_held = true;
+    }
+    // Pointer right turns the view right (the camera swings the other way
+    // round Link); pointer forward looks up (the camera drops). The stick
+    // likewise.
+    const double scale = kDegreesPerPoint * g_sensitivity;
+    g_yaw = fmod(g_yaw - g_sum_x * scale - stick_yaw, 360.0);
+    g_pitch += g_sum_y * scale * g_invert_y + stick_pitch;
+    g_pitch = g_pitch < kPitchMin ? kPitchMin : g_pitch > kPitchMax ? kPitchMax : g_pitch;
+    g_sum_x = g_sum_y = 0.0;
+    // At the distance the follow camera chose; bumpCheck brings it in from
+    // there, and the next frame's camera starts from these angles.
+    const float radius = read_f32(cpu, camera + kViewRadius);
+    if (radius > 1.0f && radius < 100000.0f) {
+        mem_write16(cpu, camera + kViewPitch, (u16)(s16)lrint(g_pitch * kAngleUnits));
+        mem_write16(cpu, camera + kViewYaw, (u16)(s16)lrint(g_yaw * kAngleUnits));
+        place_eye(cpu, camera + kViewCenter, camera + kViewEye, radius, g_pitch, g_yaw);
+    }
+}
+
 // At camera_draw's entry: this frame's camera is final and about to be drawn.
 static void camera_frame(CPUState* cpu, u32 process) {
     const u32 camera = process + kCameraBody;
-    if (aiming_view(cpu, camera) && player_in_control(cpu)) {
+    const bool aiming = aiming_view(cpu, camera);
+    const u32 style = camera_style(cpu, camera);
+    g_first_person = aiming && style != 0u && mem_read32(cpu, style) == 0x53533031u; // 'SS01'
+    g_subject_step = g_first_person ? (int)mem_read32(cpu, camera + kSubjectStep) : -1;
+    g_stick_owns = false;
+    g_stick_aims = aiming && g_stick_on && player_in_control(cpu);
+    g_stick_zooms = g_stick_aims && (mem_read16(cpu, style + kStyleFlags) & kStyleZoom) != 0u;
+    if (aiming && player_in_control(cpu)) {
         // First person or an item's aim: aim_frame, at the player's next
         // update, owns the pointer and the wheel. If it did not run once the
         // view was up, drop what came in rather than let it pile up.
@@ -587,40 +880,9 @@ static void camera_frame(CPUState* cpu, u32 process) {
         g_held = false;
         return;
     }
-    if (g_sum_x == 0.0 && g_sum_y == 0.0 && !g_held)
-        return;
-    if (!g_held) {
-        g_pitch = (s16)mem_read16(cpu, camera + kViewPitch) / kAngleUnits;
-        g_yaw = (s16)mem_read16(cpu, camera + kViewYaw) / kAngleUnits;
-        g_held = true;
-    }
-    // Pointer right turns the view right (the camera swings the other way
-    // round Link); pointer forward looks up (the camera drops).
-    const double scale = kDegreesPerPoint * g_sensitivity;
-    g_yaw = fmod(g_yaw - g_sum_x * scale, 360.0);
-    g_pitch += g_sum_y * scale * g_invert_y;
-    g_pitch = g_pitch < kPitchMin ? kPitchMin : g_pitch > kPitchMax ? kPitchMax : g_pitch;
-    g_sum_x = g_sum_y = 0.0;
-    const s16 v = (s16)lrint(g_pitch * kAngleUnits), u = (s16)lrint(g_yaw * kAngleUnits);
-
-    // Next frame's camera starts from these angles...
-    const float radius = read_f32(cpu, camera + kViewRadius);
-    if (radius > 1.0f && radius < 100000.0f) {
-        mem_write16(cpu, camera + kViewPitch, (u16)v);
-        mem_write16(cpu, camera + kViewYaw, (u16)u);
-        place_eye(cpu, camera + kViewCenter, camera + kViewEye, radius, g_pitch, g_yaw);
-    }
-    // ... and this frame is drawn at them, at the distance the game chose
-    // (walls push it in).
-    const u32 center = process + kLookatCenter, eye = process + kLookatEye;
-    const float reach = distance(cpu, eye, center);
-    if (reach > 1.0f && reach < 100000.0f) {
-        place_eye(cpu, center, eye, reach, g_pitch, g_yaw);
-        mem_write16(cpu, camera + kFinalPitch, (u16)v);
-        mem_write16(cpu, camera + kFinalYaw, (u16)u);
-        place_eye(cpu, camera + kViewCenter, camera + kFinalEye, read_f32(cpu, camera + kFinalRadius), g_pitch,
-                  g_yaw);
-    }
+    // The mouse's and the stick's view went in at bumpCheck (view_frame);
+    // the stick is the camera's until the next draw says otherwise.
+    g_stick_owns = g_stick_on;
 }
 
 // Testing only: gives the player an item (BLUEWAKE_MOUSE_TEST_ITEM) on X.
@@ -658,16 +920,20 @@ static void trace_camera(CPUState* cpu, u32 process) {
     const u32 name = style != 0u ? mem_read32(cpu, style) : 0x3F3F3F3Fu;
     fprintf(stderr,
             "[mouse-trace] retrace=%llu mode=%u style=%c%c%c%c event=%u demo=%u view V=%d U=%d final V=%d U=%d "
-            "reach=%.1f held=%d radius=%.1f limits=%.1f..%.1f zoom=%.2f/%.2f link=%d\n",
+            "reach=%.1f held=%d stick=%d radius=%.1f limits=%.1f..%.1f zoom=%.2f/%.2f link=%d eye_y=%.1f "
+            "center_y=%.1f floor=%.1f/%.1f\n",
             g_retrace, mem_read32(cpu, camera + kMode), (char)(name >> 24), (char)(name >> 16), (char)(name >> 8),
             (char)name, mem_read8(cpu, kEventMode),
             guest_pointer(player) ? mem_read32(cpu, player + kPlayerDemoMode) : 99u,
             (s16)mem_read16(cpu, camera + kViewPitch), (s16)mem_read16(cpu, camera + kViewYaw),
             (s16)mem_read16(cpu, camera + kFinalPitch), (s16)mem_read16(cpu, camera + kFinalYaw),
             distance(cpu, process + kLookatEye, process + kLookatCenter), g_held ? 1 : 0,
+            g_stick_owns ? 1 : g_first_person ? 2 : 0,
             read_f32(cpu, camera + kViewRadius), read_f32(cpu, camera + kFollowMinRadius),
             read_f32(cpu, camera + kFollowMaxRadius), g_zoom_live, g_zoom,
-            guest_pointer(player) ? (s16)mem_read16(cpu, player + kPlayerShapeY) : 0);
+            guest_pointer(player) ? (s16)mem_read16(cpu, player + kPlayerShapeY) : 0,
+            read_f32(cpu, process + kLookatEye + 4u), read_f32(cpu, process + kLookatCenter + 4u),
+            read_f32(cpu, camera + kGroundHeight), read_f32(cpu, camera + kWaterHeight));
 }
 
 void bluewake_mouse_camera_hook(CPUState* cpu, u32 address) {
@@ -680,6 +946,13 @@ void bluewake_mouse_camera_hook(CPUState* cpu, u32 address) {
         camera_frame(cpu, process);
         if (g_trace)
             trace_camera(cpu, process);
+    } else if (address == kCameraBump) {
+        if (cpu == NULL)
+            return;
+        const u32 process = mem_read32(cpu, kCameraPointer);
+        if (!guest_pointer(process) || cpu->gpr[3] != process + kCameraBody)
+            return;
+        view_frame(cpu, process + kCameraBody);
     } else if (address == kPlayerExecute) {
         if (cpu == NULL)
             return;

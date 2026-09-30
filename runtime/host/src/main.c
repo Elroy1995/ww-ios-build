@@ -4040,6 +4040,8 @@ static void host_si_complete_pad_transfer(u32 control) {
     if (g_live_pad_enabled) {
         (void)dol_platform_pad_read(live_pad);
         bluewake_mouse_camera_pad(&live_pad[0]);
+    } else if (bluewake_mouse_camera_scripted()) {
+        bluewake_mouse_camera_pad(&live_pad[0]); // BLUEWAKE_STICK_TEST without a controller
     }
     host_note_live_input(&live_pad[0]);
     bluewake_pad_merge(g_live_takeover ? &live_pad[channel] : &g_virtual_pad[channel],
@@ -4141,6 +4143,8 @@ static void host_si_latch_pad_poll(void) {
     if (g_live_pad_enabled) {
         (void)dol_platform_pad_read(live_pad);
         bluewake_mouse_camera_pad(&live_pad[0]);
+    } else if (bluewake_mouse_camera_scripted()) {
+        bluewake_mouse_camera_pad(&live_pad[0]); // BLUEWAKE_STICK_TEST without a controller
     }
     host_note_live_input(&live_pad[0]);
     for (u32 channel = 0; channel < 4u; channel++) {

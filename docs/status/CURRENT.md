@@ -1,3 +1,35 @@
+## 2026-09-30 A fast right-stick camera and aiming, and a camera kept out of the ground (Mac-tested)
+
+**The right stick as the camera** (`runtime/host/src/mouse_camera.c`, on by default on the Mac,
+`BLUEWAKE_STICK_CAMERA=0` for the game's own). The game's C-stick camera (dCamera_c's manual camera,
+mode 12) eases its turn in and out and starts only past a quarter of the stick (Aurora's substick dead
+zone, 8000). Wherever the mouse turns the camera (the follow camera, the player in control), the right
+stick now sets the view's angles the same way: a rate from its tilt (12 percent dead zone, then 30
+percent linear and 70 percent quadratic up to 360 degrees a second, `BLUEWAKE_STICK_CAMERA_SPEED`;
+up and down at 0.6 of it), by game time (a game frame's worth at each update, so a steady tilt turns
+evenly through the in-between frames), no easing, the view held where it is left. The pad read keeps
+the tilted stick from the game there. Its click is the C-stick's push up (first person); in first
+person a click is the push down out, a little then past three quarters, released as soon as
+subjectCamera's m3C4 has taken each step (held on, the follow camera took it for its own push down and
+switched to the manual camera). Scripted (`BLUEWAKE_STICK_TEST`, headless): full tilt 12.01 degrees a
+game frame, half tilt 3.41, first person in 4 retraces and out in 8, camera mode 0 throughout.
+
+**Aiming** (same file). In first person and when aiming an item, the right stick aims as the mouse
+does (aim_frame: shape_angle.y and mWork.subject.m388), at `BLUEWAKE_STICK_AIM_SPEED` (180 degrees a
+second), slower in proportion to the telescope's and Picto Box's zoom; pushing it down looks down
+instead of leaving first person. In those two views the left stick's up and down (or the D-pad's)
+zoom, as the C-stick's did, and the left stick no longer aims there. Scripted: 6.0 degrees a game
+frame at full tilt; the telescope 1x to 7.4x in two thirds of a second, and aiming at 7.4x turning
+7.4 times slower. The options menu's Controls tab has the switch, both speeds and inverted axes.
+
+**The camera kept out of the ground and the water** (mouse and stick). Their angles were applied at
+camera_draw, after bumpCheck (the camera's wall, ground and water check) had placed the eye, so a low
+tilt put it wherever the angle said, into the ground or under the sea. They now go into
+dCamera_c::mViewCache at bumpCheck's entry (0x80167F08, once a frame in Run), and the game pulls the
+eye in along the line from Link and lifts it to the water's surface. At the Outset start, tilted to
+the lowest angle facing up the slope: the eye 36 units under the ground before, now pulled in from 249
+to 190 units and 5 above it.
+
 ## 2026-09-29 Cheaper, batched in-between frames and the PC branch's host fixes (Mac-tested)
 
 **Renderer** (RecompCore 6892947, patch 0110):

@@ -29,6 +29,7 @@ it is yours alone. Never share or upload it. Your saves live in
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -504,6 +505,15 @@ int main(void) {
                   + [ROOT / "mods/betterww/options.txt", Path(__file__)]):
             if f.is_file() and f.name != "package_release.py":
                 inputs.update(f.read_bytes())
+        # The guest addresses the host names (direct_calls.py's watch list): a
+        # boundary at one must reach the host's edge service, so a host that
+        # names a new one (a new hook) needs the chunks' direct calls made
+        # again. The addresses, not the host's sources: other host changes do
+        # not touch the game source.
+        spec = importlib.util.spec_from_file_location("direct_calls", ROOT / "scripts/windows/direct_calls.py")
+        direct_calls = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(direct_calls)
+        inputs.update(",".join(f"{a:08X}" for a in sorted(direct_calls.watched_addresses())).encode())
         inputs = inputs.hexdigest()
         current = o / "composite-src"
         saved = (o / "composite-final.digest").read_text().strip() if (o / "composite-final.digest").exists() else ""

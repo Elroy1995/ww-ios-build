@@ -46,7 +46,8 @@ const char* const kKeys[] = {
     "BLUEWAKE_FADE_FRAMES",     "BLUEWAKE_FAST_FORWARD",    "BLUEWAKE_QUICK_DOORS",
     "BLUEWAKE_JUMP_BUTTON",
     "BLUEWAKE_SPRINT_SPEED",    "BLUEWAKE_MOUSE_CAMERA",    "BLUEWAKE_MOUSE_SENSITIVITY",
-    "BLUEWAKE_MOUSE_INVERT_Y",  "BLUEWAKE_SIMULATION_60HZ",
+    "BLUEWAKE_MOUSE_INVERT_Y",  "BLUEWAKE_SIMULATION_60HZ", "BLUEWAKE_STICK_CAMERA",    "BLUEWAKE_STICK_CAMERA_SPEED",
+    "BLUEWAKE_STICK_CAMERA_INVERT_X", "BLUEWAKE_STICK_CAMERA_INVERT_Y", "BLUEWAKE_STICK_AIM_SPEED",
 };
 
 std::string g_path;                          // the settings file ("" when none)
@@ -387,7 +388,48 @@ void controls_tab() {
         bluewake_mouse_camera_reload();
     }
     ImGui::EndDisabled();
-    ImGui::TextDisabled("The right stick's left and right: Better Wind Waker's \"Invert camera\" (Gameplay).");
+
+    ImGui::Separator();
+    bool stick = env_on("BLUEWAKE_STICK_CAMERA", true);
+    if (ImGui::Checkbox("Fast right-stick camera and aiming (like the mouse; click the stick for first person)",
+                        &stick)) {
+        set_env("BLUEWAKE_STICK_CAMERA", stick ? "1" : "0");
+        bluewake_mouse_camera_reload();
+    }
+    ImGui::BeginDisabled(!stick);
+    float speed = static_cast<float>(std::atof(env("BLUEWAKE_STICK_CAMERA_SPEED", "360").c_str()));
+    if (speed <= 0.f)
+        speed = 360.f;
+    if (ImGui::SliderFloat("Right-stick turn speed", &speed, 120.f, 720.f, "%.0f degrees a second")) {
+        char text[16];
+        std::snprintf(text, sizeof text, "%.0f", speed);
+        set_env("BLUEWAKE_STICK_CAMERA_SPEED", text);
+        bluewake_mouse_camera_reload();
+    }
+    float aim = static_cast<float>(std::atof(env("BLUEWAKE_STICK_AIM_SPEED", "180").c_str()));
+    if (aim <= 0.f)
+        aim = 180.f;
+    if (ImGui::SliderFloat("Right-stick aim speed (first person, items)", &aim, 60.f, 480.f,
+                           "%.0f degrees a second")) {
+        char text[16];
+        std::snprintf(text, sizeof text, "%.0f", aim);
+        set_env("BLUEWAKE_STICK_AIM_SPEED", text);
+        bluewake_mouse_camera_reload();
+    }
+    bool invert_x = env_on("BLUEWAKE_STICK_CAMERA_INVERT_X", false);
+    if (ImGui::Checkbox("Invert the right stick's left and right", &invert_x)) {
+        set_env("BLUEWAKE_STICK_CAMERA_INVERT_X", invert_x ? "1" : "0");
+        bluewake_mouse_camera_reload();
+    }
+    bool invert_y = env_on("BLUEWAKE_STICK_CAMERA_INVERT_Y", false);
+    if (ImGui::Checkbox("Invert the right stick's up and down", &invert_y)) {
+        set_env("BLUEWAKE_STICK_CAMERA_INVERT_Y", invert_y ? "1" : "0");
+        bluewake_mouse_camera_reload();
+    }
+    ImGui::EndDisabled();
+    ImGui::TextDisabled(stick ? "In the telescope and the Picto Box the left stick (or the D-pad) zooms."
+                              : "The game's right stick: its left and right follow Better Wind Waker's "
+                                "\"Invert camera\" (Gameplay).");
 
     ImGui::Separator();
     ImGui::TextUnformatted("Keyboard");
@@ -398,6 +440,8 @@ void controls_tab() {
     ImGui::BulletText("the wheel zooms; Esc gives the mouse back, and Esc again opens this menu");
     ImGui::TextUnformatted("Controller");
     ImGui::BulletText("Left bumper jump, left stick click sprint (until Link stops), Back this menu");
+    ImGui::BulletText("Right stick: turns the camera and aims; its click is first person (and back out)");
+    ImGui::BulletText("Telescope and Picto Box: the right stick aims, the left stick (or D-pad) zooms");
 }
 
 void open_menu();
