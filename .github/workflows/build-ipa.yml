@@ -1,0 +1,53 @@
+# Save as .github/workflows/build-ipa.yml in YOUR copy of Wind-Waker-Recomp.
+# Untested: adjust if the build script complains about a missing tool or disk space.
+#
+# Repo secrets you need (Settings > Secrets and variables > Actions):
+#   DISC_URL        direct-download link to your GZLE01 (USA, rev 0) disc image,
+#                   hosted somewhere private that only you can reach
+#   IPA_PASSPHRASE  any long random password; the IPA is encrypted with it so the
+#                   uploaded artifact is useless to anyone else
+name: Build IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14          # Apple silicon runner
+    timeout-minutes: 360       # GitHub's hard cap per job
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show and free disk space
+        run: |
+          df -h /
+          sudo rm -rf "$HOME/Library/Android" || true
+          xcrun simctl delete all || true
+          df -h /
+
+      - name: Install tools
+        run: brew install cmake ninja p7zip
+
+      - name: Download disc image
+        env:
+          DISC_URL: ${{ secrets.DISC_URL }}
+        run: curl -L --fail "$DISC_URL" -o "$RUNNER_TEMP/disc.iso"
+
+      - name: Build IPA
+        run: |
+          scripts/builder/build.sh "$RUNNER_TEMP/disc.iso" \
+            --ipa build/BlueWake.ipa --no-train
+
+      - name: Encrypt IPA
+        env:
+          IPA_PASSPHRASE: ${{ secrets.IPA_PASSPHRASE }}
+        run: |
+          7z a -p"$IPA_PASSPHRASE" -mhe=on build/BlueWake-encrypted.7z build/BlueWake.ipa
+
+      - name: Upload encrypted IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlueWake-encrypted
+          path: build/BlueWake-encrypted.7z
+          retention-days: 1
