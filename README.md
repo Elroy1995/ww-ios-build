@@ -69,9 +69,12 @@ this is a static recompilation with a hardware compatibility layer, not an "emul
   and the rest of Wind Waker HD's quality-of-life changes ([Better Wind Waker](https://github.com/WideBoner/betterww))
 - **Quick doors and fast scene changes:** Link goes through doors without the walk-in, and the black
   between areas runs as fast as the computer can
-- **Controls:** game controllers, keyboard, a mouse camera (click the game, move the mouse; the wheel
-  zooms) and dedicated jump and sprint buttons on Windows and Mac; touch controls with a layout editor,
-  controllers and keyboards on iPhone and iPad
+- **Controls:** on Windows and Mac, game controllers with a fast right-stick camera and aiming (the view
+  turns directly with the stick, like the mouse, instead of the game's eased camera; its click is first
+  person; the left stick zooms the telescope and the Picto Box), keyboard, a mouse camera (click the game,
+  move the mouse; the wheel zooms) and dedicated jump and sprint buttons; the camera, by stick or mouse,
+  stays out of the ground and the water. On iPhone and iPad, touch controls with a layout editor,
+  controllers and keyboards
 - **Picture:** render resolution up to 4× (or the window's own pixels), texture filtering up to 16×
   anisotropic, fullscreen, and Dolphin-format HD texture packs
 - **Saves** through the game's own memory card, kept apart from the app so updates never touch them
@@ -245,7 +248,9 @@ game plays. The experimental 60 Hz gameplay on Windows runs the game itself at 6
 ### Do controllers work?
 
 Yes. On Windows and Mac, controllers work as a GameCube pad (Xbox, PlayStation, Switch Pro and others),
-next to the keyboard and mouse. On iPhone and iPad, controllers that iOS supports work, with camera
+next to the keyboard and mouse. The right stick turns the camera directly and aims, its click goes into
+first person and back out, and the left bumper jumps; the game's own eased right-stick camera is an option
+under Controls. On iPhone and iPad, controllers that iOS supports work, with camera
 inversion and button remapping under **⋯ › Controller**, and the game's rumble is passed to the controller.
 
 ### Will updates keep my saves?
