@@ -8,6 +8,8 @@
 #include "native_skin.h"
 #include "native_vec.h"
 #include "native_j3d.h"
+/* Certified game math entry hooks. */
+#include "native_game_math.h"
 #include <stdlib.h>
 #include <stdio.h>
 static int s_native_math;
@@ -214,6 +216,9 @@ RECOMP_MODULE_EXPORT const StaticRecompModuleDesc* staticrecomp_get_module(void)
             fprintf(stderr, "[native-j3d] certified rotation/translation matrices enabled\n");
         }
 #endif
+        /* Certified game math entry hooks use the existing native opt-in. */
+        bluewake_native_game_math_enabled = s_native_math;
+        if (s_native_math) atexit(bluewake_native_game_math_report);
         if (s_native_math) {
             atexit(bluewake_native_skin_report);
             atexit(bluewake_native_vec_report);

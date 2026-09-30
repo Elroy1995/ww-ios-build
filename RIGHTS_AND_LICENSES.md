@@ -17,6 +17,9 @@ GPLv3 is the license the parts BlueWake is built from allow together:
   [zeldaret/tww](https://github.com/zeldaret/tww), revision `09de0609`,
   `src/JSystem/J3DGraphBase/J3DTransform.cpp`, released under
   [CC0 1.0 Universal](https://github.com/zeldaret/tww/blob/09de0609/LICENSE)
+- the certified game math natives in `cmake/composite/native_game_math.c` (collision, clipping, animation
+  and matrix functions) reproduce GZLE01's translated code, written with the same revision of
+  [zeldaret/tww](https://github.com/zeldaret/tww) (CC0 1.0) as the guide to what each function does
 
 Wind Waker Recomp is released as source and as a Mac app ([docs/MACOS_RELEASE.md](docs/MACOS_RELEASE.md))
 that runs only with the player's own disc. iPad apps are built by their player, on their own Mac, from

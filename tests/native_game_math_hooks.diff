@@ -1,0 +1,150 @@
+--- a/chunks_dol/chunk_0002_text1_800096E0.c
++++ b/chunks_dol/chunk_0002_text1_800096E0.c
+@@ -3,4 +3,6 @@
+ #include "gather_pipe.h"
+ #include "../generated.h"
++/* bluewake: certified game math (scripts/windows/native_game_math.py) */
++#include "native_game_math.h"
+ /* bluewake: prepaid block copies (scripts/windows/fast_blocks.py) */
+ /* bluewake: indirect calls run directly (cmake/composite/direct_calls.h) */
+@@ -51050,4 +51052,7 @@
+ 
+ label_8000CD28:
++    if (bluewake_native_game_math_enabled &&
++        bluewake_native_game_math(ctx, 0x8000CD28u))
++        goto return_dispatch_800096E0;
+     ctx->pc = 0x8000CD28u;
+     cycle_block_prepaid = dolrecomp_block_can_precharge(ctx, 24u);
+@@ -51684,4 +51689,7 @@
+ 
+ label_8000CDC8:
++    if (bluewake_native_game_math_enabled &&
++        bluewake_native_game_math(ctx, 0x8000CDC8u))
++        goto return_dispatch_800096E0;
+     ctx->pc = 0x8000CDC8u;
+     cycle_block_prepaid = dolrecomp_block_can_precharge(ctx, 24u);
+@@ -52318,4 +52326,7 @@
+ 
+ label_8000CE68:
++    if (bluewake_native_game_math_enabled &&
++        bluewake_native_game_math(ctx, 0x8000CE68u))
++        goto return_dispatch_800096E0;
+     ctx->pc = 0x8000CE68u;
+     cycle_block_prepaid = dolrecomp_block_can_precharge(ctx, 24u);
+--- a/chunks_dol/chunk_0144_text1_802416E0.c
++++ b/chunks_dol/chunk_0144_text1_802416E0.c
+@@ -5,4 +5,6 @@
+ #include "gather_pipe.h"
+ #include "../generated.h"
++/* bluewake: certified game math (scripts/windows/native_game_math.py) */
++#include "native_game_math.h"
+ /* bluewake: prepaid block copies (scripts/windows/fast_blocks.py) */
+ /* bluewake: indirect calls run directly (cmake/composite/direct_calls.h) */
+@@ -62415,4 +62417,7 @@
+ 
+ label_80245674:
++    if (bluewake_native_game_math_enabled &&
++        bluewake_native_game_math(ctx, 0x80245674u))
++        goto return_dispatch_802416E0;
+     ctx->pc = 0x80245674u;
+     cycle_block_prepaid = dolrecomp_block_can_precharge(ctx, 9u);
+@@ -62726,4 +62731,7 @@
+ 
+ label_802456C4:
++    if (bluewake_native_game_math_enabled &&
++        bluewake_native_game_math(ctx, 0x802456C4u))
++        goto return_dispatch_802416E0;
+     ctx->pc = 0x802456C4u;
+     cycle_block_prepaid = dolrecomp_block_can_precharge(ctx, 7u);
+--- a/chunks_dol/chunk_0145_text1_802456E0.c
++++ b/chunks_dol/chunk_0145_text1_802456E0.c
+@@ -3,4 +3,6 @@
+ #include "gather_pipe.h"
+ #include "../generated.h"
++/* bluewake: certified game math (scripts/windows/native_game_math.py) */
++#include "native_game_math.h"
+ /* bluewake: prepaid block copies (scripts/windows/fast_blocks.py) */
+ /* bluewake: indirect calls run directly (cmake/composite/direct_calls.h) */
+@@ -4563,4 +4565,7 @@
+ 
+ label_80245714:
++    if (bluewake_native_game_math_enabled &&
++        bluewake_native_game_math(ctx, 0x80245714u))
++        goto return_dispatch_802456E0;
+     ctx->pc = 0x80245714u;
+     cycle_block_prepaid = dolrecomp_block_can_precharge(ctx, 8u);
+--- a/chunks_dol/chunk_0146_text1_802496E0.c
++++ b/chunks_dol/chunk_0146_text1_802496E0.c
+@@ -3,4 +3,6 @@
+ #include "gather_pipe.h"
+ #include "../generated.h"
++/* bluewake: certified game math (scripts/windows/native_game_math.py) */
++#include "native_game_math.h"
+ /* bluewake: prepaid block copies (scripts/windows/fast_blocks.py) */
+ /* bluewake: indirect calls run directly (cmake/composite/direct_calls.h) */
+@@ -19278,4 +19280,7 @@
+ 
+ label_8024A8E0:
++    if (bluewake_native_game_math_enabled &&
++        bluewake_native_game_math(ctx, 0x8024A8E0u))
++        goto return_dispatch_802496E0;
+     ctx->pc = 0x8024A8E0u;
+     cycle_block_prepaid = dolrecomp_block_can_precharge(ctx, 6u);
+@@ -23975,4 +23980,7 @@
+ 
+ label_8024AE3C:
++    if (bluewake_native_game_math_enabled &&
++        bluewake_native_game_math(ctx, 0x8024AE3Cu))
++        goto return_dispatch_802496E0;
+     ctx->pc = 0x8024AE3Cu;
+     cycle_block_prepaid = dolrecomp_block_can_precharge(ctx, 35u);
+--- a/chunks_dol/chunk_0149_text1_802556E0.c
++++ b/chunks_dol/chunk_0149_text1_802556E0.c
+@@ -5,4 +5,6 @@
+ #include "gather_pipe.h"
+ #include "../generated.h"
++/* bluewake: certified game math (scripts/windows/native_game_math.py) */
++#include "native_game_math.h"
+ /* bluewake: prepaid block copies (scripts/windows/fast_blocks.py) */
+ /* bluewake: indirect calls run directly (cmake/composite/direct_calls.h) */
+@@ -20294,4 +20296,7 @@
+ 
+ label_80256888:
++    if (bluewake_native_game_math_enabled &&
++        bluewake_native_game_math(ctx, 0x80256888u))
++        goto return_dispatch_802556E0;
+     ctx->pc = 0x80256888u;
+     cycle_block_prepaid = dolrecomp_block_can_precharge(ctx, 12u);
+@@ -21336,4 +21341,7 @@
+ 
+ label_802569D0:
++    if (bluewake_native_game_math_enabled &&
++        bluewake_native_game_math(ctx, 0x802569D0u))
++        goto return_dispatch_802556E0;
+     ctx->pc = 0x802569D0u;
+     cycle_block_prepaid = dolrecomp_block_can_precharge(ctx, 7u);
+--- a/chunks_dol/chunk_0187_text1_802ED6E0.c
++++ b/chunks_dol/chunk_0187_text1_802ED6E0.c
+@@ -5,4 +5,6 @@
+ #include "gather_pipe.h"
+ #include "../generated.h"
++/* bluewake: certified game math (scripts/windows/native_game_math.py) */
++#include "native_game_math.h"
+ /* bluewake: prepaid block copies (scripts/windows/fast_blocks.py) */
+ /* bluewake: calcWeightEnvelopeMtx natively (cmake/composite/native_skin.c) */
+@@ -49082,4 +49084,7 @@
+ 
+ label_802F072C:
++    if (bluewake_native_game_math_enabled &&
++        bluewake_native_game_math(ctx, 0x802F072Cu))
++        goto return_dispatch_802ED6E0;
+     ctx->pc = 0x802F072Cu;
+     cycle_block_prepaid = dolrecomp_block_can_precharge(ctx, 7u);
+@@ -50857,4 +50862,7 @@
+ 
+ label_802F0954:
++    if (bluewake_native_game_math_enabled &&
++        bluewake_native_game_math(ctx, 0x802F0954u))
++        goto return_dispatch_802ED6E0;
+     ctx->pc = 0x802F0954u;
+     cycle_block_prepaid = dolrecomp_block_can_precharge(ctx, 7u);
