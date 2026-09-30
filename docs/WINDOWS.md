@@ -139,13 +139,17 @@ BlueWake remembers where you left it, its size, and whether it was fullscreen.
 | Jump | Space (a controller's left bumper) |
 | Sprint | Shift (a controller: click the left stick) |
 | Camera | Click the game, then move the mouse (Esc releases it); the wheel zooms |
+| Controller camera | The right stick turns it and aims; its click is first person (and back out) |
 | Settings | F1, or Esc when the mouse is not the camera |
 | Fullscreen | F11 or Alt+Enter |
 | Smooth Motion | F10 |
 | Frame rate | F9 |
 
 Game controllers work through SDL (Xbox, PlayStation, Switch Pro and others). The title screen wants A to reach
-the file menu. The mouse turns the game's own camera around Link and tilts it, and a left click is A; in first
+the file menu. The right stick turns the camera directly, like the mouse (360 degrees a second at full tilt, no
+easing), instead of the game's eased C-stick camera; in first person and when aiming an item it aims (180 degrees
+a second), and in the telescope and the Picto Box the left stick (or the D-pad) zooms. The camera, by mouse or
+stick, stays out of the ground and the water: its angles go in before the game's own wall and ground check. The mouse turns the game's own camera around Link and tilts it, and a left click is A; in first
 person and when aiming an item it aims instead; a cutscene, door or Z-target takes the camera back. Scene
 changes are quick: the fades are short and the black between them runs as fast as the PC can, and through a door
 with a knob Link skips the walk-in and the door closing behind him (both can be turned off in the Mods tab).
@@ -157,8 +161,9 @@ menu until you close it):
   frame rate counter, the render resolution (the window's own pixels, or 1x to 4x the GameCube's 480 lines),
   texture filtering (up to 16x anisotropic), keeping the picture's shape, pausing while the window is in the
   background, and putting the window back in the middle.
-- *Controls*: the mouse camera, its sensitivity and vertical direction, the controller's camera stick
-  directions, and the keyboard layout.
+- *Controls*: the mouse camera, its sensitivity and vertical direction, the fast right-stick camera (or the
+  game's own) and its turn and aim speeds, the controller's camera stick directions (for either), and the
+  keyboard layout.
 - *Mods*: 4:3, 16:10 or 16:9, Better Wind Waker and each of its options, quick doors, skipping through the
   black while loading, and an HD texture pack (a Dolphin-format pack for GZLE01, in the folder the menu opens).
 - *Sound and files*: fast (Dolphin's high-level) or exact (the DSP's own program) sound, and your files.

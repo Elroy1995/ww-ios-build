@@ -80,7 +80,12 @@ runs the game itself at 60.
 Keyboard: W A S D control stick, T F G H C-stick, arrow keys D-pad,
 J K U I = A B X Y, E R Q = L R Z, Return START, Space jump, Shift sprint.
 Mouse: click the game, then move the mouse to turn the camera (Esc gives the
-mouse back); the wheel zooms. Game controllers work too.
+mouse back); the wheel zooms.
+Controller (Xbox, PlayStation, Switch Pro, ...): the right stick turns the
+camera directly and aims, its click is first person (and back out), the left
+stick zooms the telescope and the Picto Box, the left bumper jumps and a click
+of the left stick sprints. Settings, Controls: the game's own right stick
+instead, the right stick's speeds and directions.
 F1 or Esc settings, F11 or Alt+Enter fullscreen, F10 Smooth Motion, F9 frame rate.
 BlueWake.exe --help lists the command-line options.
 
