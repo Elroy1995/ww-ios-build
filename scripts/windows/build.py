@@ -651,10 +651,13 @@ int main(void) {
         self.source_step("chunk-headers", "scripts/windows/chunk_headers.py", root)
         self.source_step("direct-calls", "scripts/windows/direct_calls.py", root)
         self.source_step("native-skin", "scripts/windows/native_skin.py", root)
+        # Certified game math entry hooks; before prepaid copies/manifests.
+        self.source_step("native-game-math", "scripts/windows/native_game_math.py", root)
         self.source_step("fast-blocks", "scripts/windows/fast_blocks.py", root)
         self.source_step("simulation-prepare", "scripts/mods/prepare_simulation_60hz.py", root)
         # Last: its manifest hashes whole chunk files, as they end up.
         self.source_step("native-math", "scripts/mods/prepare_native_math.py", root)
+        print((self.logs / "native-game-math.log").read_text(errors="replace").strip().splitlines()[-1])
         for name in ("guest-cpu", "gpr-inline", "chunk-headers", "direct-calls", "native-skin", "fast-blocks",
                      "simulation-prepare", "native-math"):
             print((self.logs / f"{name}.log").read_text(errors="replace").strip().splitlines()[-1])
@@ -802,6 +805,11 @@ int main(void) {
         for name in ("global_guest_cpu.py", "inline_save_restore_gpr.py", "chunk_headers.py", "direct_calls.py",
                      "native_skin.py", "fast_blocks.py"):
             path = ROOT / "scripts/windows" / name
+            key.update(path.relative_to(ROOT).as_posix().encode())
+            key.update(path.read_bytes())
+        # Certified game math: isolated additions to the local PGO cache key.
+        for path in (ROOT / "cmake/composite/native_game_math.c", ROOT / "cmake/composite/native_game_math.h",
+                     ROOT / "scripts/windows/native_game_math.py"):
             key.update(path.relative_to(ROOT).as_posix().encode())
             key.update(path.read_bytes())
         return key.hexdigest()

@@ -7,6 +7,8 @@
 #include "native_math.h"
 #include "native_skin.h"
 #include "native_vec.h"
+/* Certified game math entry hooks. */
+#include "native_game_math.h"
 #include <stdlib.h>
 #include <stdio.h>
 static int s_native_math;
@@ -205,6 +207,9 @@ RECOMP_MODULE_EXPORT const StaticRecompModuleDesc* staticrecomp_get_module(void)
          * where the builder routed their calls there (scripts/windows:
          * native_skin.py, direct_calls.py), with the other certified natives. */
         bluewake_native_skin_enabled = s_native_math;
+        /* Certified game math entry hooks use the existing native opt-in. */
+        bluewake_native_game_math_enabled = s_native_math;
+        if (s_native_math) atexit(bluewake_native_game_math_report);
         if (s_native_math) {
             atexit(bluewake_native_skin_report);
             atexit(bluewake_native_vec_report);

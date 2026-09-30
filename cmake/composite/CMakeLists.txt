@@ -67,6 +67,8 @@ add_library(${MODULE_NAME} SHARED
   gather_pipe.c
   native_skin.c
   native_vec.c
+  # Certified game math entry hooks (scripts/windows/native_game_math.py).
+  native_game_math.c
   ${GXRUNTIME_DIR}/src/core/cpu.c
   ${GXRUNTIME_DIR}/src/core/cpu_exception.c
   ${GXRUNTIME_DIR}/src/core/cpu_interpreter.c
