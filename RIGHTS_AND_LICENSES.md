@@ -13,6 +13,10 @@ GPLv3 is the license the parts BlueWake is built from allow together:
 - the touch control overlay is adapted from SunPad (GPL-3.0)
 - the translator, [DolRecomp](https://github.com/chrissotraidis/DolRecomp), and the Aurora renderer
   vendored in RecompCore keep their own licenses, recorded in those repositories
+- the recovered J3D rotation/translation formulas in `cmake/composite/native_j3d.c` are adapted from
+  [zeldaret/tww](https://github.com/zeldaret/tww), revision `09de0609`,
+  `src/JSystem/J3DGraphBase/J3DTransform.cpp`, released under
+  [CC0 1.0 Universal](https://github.com/zeldaret/tww/blob/09de0609/LICENSE)
 
 Wind Waker Recomp is released as source and as a Mac app ([docs/MACOS_RELEASE.md](docs/MACOS_RELEASE.md))
 that runs only with the player's own disc. iPad apps are built by their player, on their own Mac, from

@@ -642,7 +642,9 @@ int main(void) {
         natively where its translation is the verified one
         (scripts/windows/native_skin.py), give every block a copy without the
         per-instruction machinery for when it has prepaid its cycles
-        (scripts/windows/fast_blocks.py), then the opt-in 60 Hz
+        (scripts/windows/fast_blocks.py), run the certified recovered J3D
+        transform matrices natively (scripts/mods/prepare_native_j3d.py),
+        then the opt-in 60 Hz
         gameplay's timing sites (docs/SIMULATION_60HZ.md; off unless asked
         for), whose manifest hashes the chunks as they end up. Each leaves a
         finished chunk as it is."""
@@ -652,10 +654,11 @@ int main(void) {
         self.source_step("direct-calls", "scripts/windows/direct_calls.py", root)
         self.source_step("native-skin", "scripts/windows/native_skin.py", root)
         self.source_step("fast-blocks", "scripts/windows/fast_blocks.py", root)
+        self.source_step("native-j3d", "scripts/mods/prepare_native_j3d.py", root)
         self.source_step("simulation-prepare", "scripts/mods/prepare_simulation_60hz.py", root)
         # Last: its manifest hashes whole chunk files, as they end up.
         self.source_step("native-math", "scripts/mods/prepare_native_math.py", root)
-        for name in ("guest-cpu", "gpr-inline", "chunk-headers", "direct-calls", "native-skin", "fast-blocks",
+        for name in ("guest-cpu", "gpr-inline", "chunk-headers", "direct-calls", "native-skin", "fast-blocks", "native-j3d",
                      "simulation-prepare", "native-math"):
             print((self.logs / f"{name}.log").read_text(errors="replace").strip().splitlines()[-1])
 
@@ -791,7 +794,7 @@ int main(void) {
         # storage, the 60 Hz timing adapters) do not change what the profile counts.
         for name in ("dispatch_loop.c", "dispatch_loop.h", "module_export.c", "inline_fp.h", "gather_pipe.h",
                      "gather_pipe_batch.h", "direct_calls.h", "direct_calls.c", "native_skin.h", "native_skin.c",
-                     "native_vec.h", "native_vec.c"):
+                     "native_vec.h", "native_vec.c", "native_j3d.h", "native_j3d.c"):
             path = ROOT / "cmake/composite" / name
             key.update(path.relative_to(ROOT).as_posix().encode())
             key.update(path.read_bytes())
@@ -804,6 +807,9 @@ int main(void) {
             path = ROOT / "scripts/windows" / name
             key.update(path.relative_to(ROOT).as_posix().encode())
             key.update(path.read_bytes())
+        path = ROOT / "scripts/mods/prepare_native_j3d.py"
+        key.update(path.relative_to(ROOT).as_posix().encode())
+        key.update(path.read_bytes())
         return key.hexdigest()
 
     def train(self):

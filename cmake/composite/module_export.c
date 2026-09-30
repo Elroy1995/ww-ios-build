@@ -7,6 +7,7 @@
 #include "native_math.h"
 #include "native_skin.h"
 #include "native_vec.h"
+#include "native_j3d.h"
 #include <stdlib.h>
 #include <stdio.h>
 static int s_native_math;
@@ -205,6 +206,14 @@ RECOMP_MODULE_EXPORT const StaticRecompModuleDesc* staticrecomp_get_module(void)
          * where the builder routed their calls there (scripts/windows:
          * native_skin.py, direct_calls.py), with the other certified natives. */
         bluewake_native_skin_enabled = s_native_math;
+#ifdef BLUEWAKE_NATIVE_J3D_VERIFIED
+        const char* j3d = getenv("BLUEWAKE_NATIVE_J3D");
+        bluewake_native_j3d_enabled = s_native_math && !(j3d && strcmp(j3d, "0") == 0);
+        if (bluewake_native_j3d_enabled) {
+            atexit(bluewake_native_j3d_report);
+            fprintf(stderr, "[native-j3d] certified rotation/translation matrices enabled\n");
+        }
+#endif
         if (s_native_math) {
             atexit(bluewake_native_skin_report);
             atexit(bluewake_native_vec_report);

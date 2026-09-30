@@ -67,6 +67,7 @@ add_library(${MODULE_NAME} SHARED
   gather_pipe.c
   native_skin.c
   native_vec.c
+  native_j3d.c
   ${GXRUNTIME_DIR}/src/core/cpu.c
   ${GXRUNTIME_DIR}/src/core/cpu_exception.c
   ${GXRUNTIME_DIR}/src/core/cpu_interpreter.c
@@ -127,6 +128,24 @@ if(EXISTS "${COMPOSITE_DIR}/native_math.json")
 endif()
 if(APPLE)
   set_target_properties(${MODULE_NAME} PROPERTIES SUFFIX ".dylib")
+endif()
+if(EXISTS "${COMPOSITE_DIR}/native_j3d.json")
+  file(READ "${COMPOSITE_DIR}/native_j3d.json" J3D_MANIFEST)
+  string(JSON J3D_ABI GET "${J3D_MANIFEST}" abi)
+  string(JSON J3D_FILES LENGTH "${J3D_MANIFEST}" files)
+  if(NOT J3D_ABI EQUAL 1 OR J3D_FILES LESS 1)
+    message(FATAL_ERROR "Invalid native J3D certification manifest")
+  endif()
+  math(EXPR J3D_LAST "${J3D_FILES} - 1")
+  foreach(INDEX RANGE 0 ${J3D_LAST})
+    string(JSON SOURCE_FILE MEMBER "${J3D_MANIFEST}" files ${INDEX})
+    string(JSON EXPECTED_HASH GET "${J3D_MANIFEST}" files "${SOURCE_FILE}")
+    file(SHA256 "${COMPOSITE_DIR}/${SOURCE_FILE}" ACTUAL_HASH)
+    if(NOT ACTUAL_HASH STREQUAL EXPECTED_HASH)
+      message(FATAL_ERROR "Native J3D source changed: rerun prepare_native_j3d.py (${SOURCE_FILE})")
+    endif()
+  endforeach()
+  set_property(SOURCE module_export.c APPEND PROPERTY COMPILE_DEFINITIONS BLUEWAKE_NATIVE_J3D_VERIFIED=1)
 endif()
 if(EXISTS "${COMPOSITE_DIR}/native_gpr.json")
   file(READ "${COMPOSITE_DIR}/native_gpr.json" GPR_MANIFEST)
