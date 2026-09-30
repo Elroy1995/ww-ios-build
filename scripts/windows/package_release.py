@@ -77,6 +77,11 @@ frames. F10 turns it off and on; the settings choose 60 or 120 FPS (120 on a
 display of 100 Hz or more). "60 Hz gameplay" in the settings (experimental)
 runs the game itself at 60.
 
+If it runs slowly: F9 shows the frame rate ("60 FPS (game 30)" is full speed).
+Please send the newest session log (%APPDATA%\\BlueWake\\logs\\session-*.log)
+after a minute of play with your report: it names your CPU and GPU and, each
+second, which part of the PC held the game back.
+
 Keyboard: W A S D control stick, T F G H C-stick, arrow keys D-pad,
 J K U I = A B X Y, E R Q = L R Z, Return START, Space jump, Shift sprint.
 Mouse: click the game, then move the mouse to turn the camera (Esc gives the

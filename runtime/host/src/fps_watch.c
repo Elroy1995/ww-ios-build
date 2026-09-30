@@ -113,6 +113,16 @@ void bluewake_fps_watch_retrace(void) {
     const double gx_ms = (double)(now.drain_us - g_last.drain_us) / 1000.0 / seconds;
     const double present_ms = (double)(now.present_us - g_last.present_us) / 1000.0 / seconds;
     const double gpu_ms = (double)(now.end_frame_us - g_last.end_frame_us) / 1000.0 / seconds;
+    // How busy the graphics threads were: the FIFO translation worker the
+    // game waits for and Smooth Motion's helper (a thread started again
+    // counts from zero: that second reads 0).
+    const double gx_busy = now.gx_worker_cpu_us > g_last.gx_worker_cpu_us
+                               ? 100.0 * (double)(now.gx_worker_cpu_us - g_last.gx_worker_cpu_us) / 1e6 / seconds
+                               : 0.0;
+    const double interp_busy =
+        now.interp_helper_cpu_us > g_last.interp_helper_cpu_us
+            ? 100.0 * (double)(now.interp_helper_cpu_us - g_last.interp_helper_cpu_us) / 1e6 / seconds
+            : 0.0;
     // Not a second with a scene change's fast-forward in it (the game ran
     // faster than real time), nor the title and file screens (no Link).
     const u32 link = mem_read32(g_cpu, kPlayerPointer);
@@ -140,10 +150,12 @@ void bluewake_fps_watch_retrace(void) {
         fprintf(stderr,
                 "[fps-dip] retrace=%llu shown=%.1f game=%llu speed=%.0f%% interpolated=%llu/%llu "
                 "draws/frame=%llu rejected=%.1f%% unmatched=%.1f%% busy=%.0f%% waits: gx=%.0fms present=%.0fms "
-                "gpu=%.0fms stage=%s room=%d event=%u pos=%.0f,%.0f,%.0f reason=%s\n",
+                "gpu=%.0fms threads: gx=%.0f%% interp=%.0f%% stage=%s room=%d event=%u "
+                "pos=%.0f,%.0f,%.0f reason=%s\n",
                 g_retrace, shown, game, speed * 100.0, interpolated, frames, frames ? draws / frames : 0ull,
                 draws ? 100.0 * (double)rejected / (double)draws : 0.0,
-                draws ? 100.0 * (double)unmatched / (double)draws : 0.0, busy, gx_ms, present_ms, gpu_ms, stage,
+                draws ? 100.0 * (double)unmatched / (double)draws : 0.0, busy, gx_ms, present_ms, gpu_ms, gx_busy,
+                interp_busy, stage,
                 (int)(signed char)mem_read8(cpu, kStayRoom), mem_read8(cpu, kEventMode), x, y, z, reason);
     }
     g_last = now;

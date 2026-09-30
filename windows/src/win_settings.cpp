@@ -848,7 +848,10 @@ void frame(void*) {
     // game's own (30 at full speed).
     // With it, where the game thread waited in that second (GXRuntime's
     // counters): for the GX worker at the game's draw-done barriers, and in
-    // the present, of which end_frame is Aurora's submission.
+    // the present, of which end_frame is Aurora's submission. Then how busy
+    // each graphics thread was: the FIFO translation worker, Smooth Motion's
+    // helper and the render worker. One near 100 percent is the thread a
+    // slower CPU runs out of.
     static Uint64 fps_logged;
     static DolAuroraFrameTiming timing_before;
     const Uint64 now = SDL_GetTicks();
@@ -861,12 +864,22 @@ void frame(void*) {
         }
         DolAuroraFrameTiming timing{};
         dol_aurora_frame_timing(&timing);
-        if (fps_logged != 0)
-            std::fprintf(stderr, "[fps] shown=%.1f game=%.1f drain_ms=%.0f present_ms=%.0f end_frame_ms=%.0f\n",
+        if (fps_logged != 0) {
+            const double wall_us = static_cast<double>(now - fps_logged) * 1000.0;
+            auto busy = [&](unsigned long long after, unsigned long long before) {
+                return after > before ? 100.0 * static_cast<double>(after - before) / wall_us : 0.0;
+            };
+            std::fprintf(stderr,
+                         "[fps] shown=%.1f game=%.1f drain_ms=%.0f present_ms=%.0f end_frame_ms=%.0f "
+                         "busy: gx=%.0f%% interp=%.0f%% render=%.0f%%\n",
                          aurora::gfx::calculate_fps(), aurora::gfx::calculate_game_fps(),
                          (timing.drain_us - timing_before.drain_us) / 1000.0,
                          (timing.present_us - timing_before.present_us) / 1000.0,
-                         (timing.end_frame_us - timing_before.end_frame_us) / 1000.0);
+                         (timing.end_frame_us - timing_before.end_frame_us) / 1000.0,
+                         busy(timing.gx_worker_cpu_us, timing_before.gx_worker_cpu_us),
+                         busy(timing.interp_helper_cpu_us, timing_before.interp_helper_cpu_us),
+                         busy(timing.render_worker_cpu_us, timing_before.render_worker_cpu_us));
+        }
         fps_logged = now;
         timing_before = timing;
     }
