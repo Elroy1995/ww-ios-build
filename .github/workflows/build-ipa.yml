@@ -33,8 +33,10 @@ jobs:
         env:
           DISC_URL: ${{ secrets.DISC_URL }}
         run: |
-          pip3 install --break-system-packages gdown
-          gdown --fuzzy "$DISC_URL" -O "$RUNNER_TEMP/disc.iso"
+          pip3 install --break-system-packages --upgrade gdown
+          FILE_ID=$(echo "$DISC_URL" | sed -E 's#.*/d/([^/]+).*#\1#')
+          gdown "https://drive.google.com/uc?id=${FILE_ID}" -O "$RUNNER_TEMP/disc.iso"
+          ls -lh "$RUNNER_TEMP/disc.iso"
 
       - name: Build IPA
         run: |
