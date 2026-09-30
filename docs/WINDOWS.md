@@ -49,6 +49,11 @@ hyperthreads held 30. The worker's per-draw work is cheaper since (the derived p
 remembered, a lighter hand-off to Smooth Motion; [status/SLOW_CPU_2026-09-30.md](status/SLOW_CPU_2026-09-30.md)):
 29 to 30 there on the E-cores, every frame the same as before byte for byte.
 
+The Windows release 0.1.1 (1e97dca: RecompCore 82607d4, the certified native game math and recovered J3D
+matrices, [status/NATIVE_GAME_MATH_2026-09-30.md](status/NATIVE_GAME_MATH_2026-09-30.md)): the unpacked zip's
+first launch prepared the disc from the `.rvz`; paced on Outset with Link running, 30 game frames a second
+(60 shown) on all cores and 29.9 on the E-cores; the Outset route's frames 0.1.0's byte for byte.
+
 Not yet tried on Windows: a game controller, audio on other output devices, the HD texture packs, the later
 game, and other PCs (AMD CPUs and GPUs, Vulkan; slower CPUs only through the E-core stand-in above).
 

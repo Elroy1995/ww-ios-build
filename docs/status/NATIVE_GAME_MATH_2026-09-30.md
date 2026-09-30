@@ -120,7 +120,7 @@ After importing these commits, the builder's source preparation order is:
 
 `build.py` contains the new source step and its log output, and includes the new C/header/script in its PGO cache key. Use the builder's actual `COMPOSITE_SRC` root; run the game-math step after direct calls and before fast-block copies and whole-chunk manifests. The other session's J3D preparation should remain at its chosen compatible point; this hook does not alter either of its function bodies.
 
-`cmake/composite/CMakeLists.txt` adds `native_game_math.c`. `module_export.c` enables the entry hooks and exit report with the existing `BLUEWAKE_NATIVE_MATH=1` opt-in, retaining the project's default-off behavior. No new command-line option or game setting is introduced.
+`cmake/composite/CMakeLists.txt` adds `native_game_math.c`. `module_export.c` enables the entry hooks and exit report with the existing `BLUEWAKE_NATIVE_MATH` switch, which the Windows app sets to 1 by default (`windows/src/win_entry.c`), so they are on in the Windows release. No new command-line option or game setting is introduced.
 
 The six DOL chunks changed by the entry hooks and therefore needing recompilation are:
 
@@ -132,6 +132,28 @@ The six DOL chunks changed by the entry hooks and therefore needing recompilatio
 - `chunk_0187_text1_802ED6E0.c`: short-key interpolation and simple transform.
 
 Matching mod variants, if any, are certified and hooked too. `chunk_0195_text1_8030D6E0.c` is an SDK certificate dependency and receives no hook/change from this script. The new native source and `module_export.c` also compile; generated source should be prepared normally before compilation. This report supplies integration instructions without running the prohibited build script.
+
+## In the Windows 0.1.1 build (2026-09-30)
+
+Merged with the recovered J3D matrices and built by `scripts/windows/build.py` from 1e97dca:
+
+- The builder finishes the source twice (in the mods step, then at "the last source steps"). The first
+  pass certified 10 of 12 entries: the `xyz_sub_entry` fragment (chunk 0144) and `clip_zero_loop` (chunk
+  0149) did not match before `fast_blocks.py`, their certificates having been taken from a finished tree.
+  The second pass, on the finished chunks, certified all 12 and added those two hooks, the form the hook
+  tests used. Every build ends the same way; certifying the two fragments in their earlier form as well
+  would let the first pass hook them too.
+- A headless run of the Outset load route with Link running (2,900 retraces), native/declined:
+  cXyz add 573,835/1,521, sub 2,081,050/5,370, scale 332,538/770; AabCyl 3,606,614/9,917; XrotS
+  595,549/1,179, YrotS 1,229,723/2,508, ZrotS 116,213/240; box-line 1,290,066/30,066; sphere clip
+  1,342,649/18,991; box clip 80,457/12,794; key interpolation 135,971/508,431; simple transform
+  102,371/363,515. The J3D matrices: 488,187/2,275. The module's exit reports reach stderr only with
+  `BLUEWAKE_SESSION_LOG=0` (the session log is closed before they run).
+- The frames are 0.1.0's byte for byte on the Outset route (19 captures with Smooth Motion off, one of them
+  taken two retraces later with the same image; 62 real and in-between frames with it on).
+- On the i9's efficiency cores, unpaced with Smooth Motion off at Outset's spawn view: 35.0 game frames a
+  second, against 34.4 with 0.1.1's renderer changes alone and 29.7 for 0.1.0, within this report's
+  estimate of about 2 percent of the game thread.
 
 ## Commits
 
