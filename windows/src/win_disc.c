@@ -125,6 +125,10 @@ typedef struct Work {
 static LRESULT CALLBACK progress_proc(HWND w, UINT message, WPARAM wp, LPARAM lp) {
     if (message == WM_CLOSE)
         return 0;  // the work finishes first
+    if (message == WM_CTLCOLORSTATIC) {  // the text on the window's own background
+        SetBkMode((HDC)wp, TRANSPARENT);
+        return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
+    }
     return DefWindowProcW(w, message, wp, lp);
 }
 
