@@ -1,11 +1,9 @@
-# Save as .github/workflows/build-ipa.yml in YOUR copy of Wind-Waker-Recomp.
-# Untested: adjust if the build script complains about a missing tool or disk space.
+# Replace the ENTIRE contents of .github/workflows/build-ipa.yml with this file.
+# Untested. The compile is too long for one 6-hour job, so this saves its progress
+# (build/ and ref/) at ~5.5 hours and the next run picks up where it stopped.
+# Run it again and again until the run finishes green and has an artifact.
 #
-# Repo secrets you need (Settings > Secrets and variables > Actions):
-#   DISC_URL        direct-download link to your GZLE01 (USA, rev 0) disc image,
-#                   hosted somewhere private that only you can reach
-#   IPA_PASSPHRASE  any long random password; the IPA is encrypted with it so the
-#                   uploaded artifact is useless to anyone else
+# Secrets needed: DISC_URL (Google Drive link) and IPA_PASSPHRASE.
 name: Build IPA
 
 on:
@@ -13,11 +11,12 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15          # Apple silicon runner
-    timeout-minutes: 360       # GitHub's hard cap per job
+    runs-on: macos-15
+    timeout-minutes: 360
 
     steps:
       - uses: actions/checkout@v4
+
       - name: Select newest Xcode
         run: |
           XC=$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)
@@ -34,6 +33,16 @@ jobs:
       - name: Install tools
         run: brew install cmake ninja p7zip
 
+      - name: Restore build progress
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build
+            ref
+          key: ww-build-none
+          restore-keys: |
+            ww-build-
+
       - name: Download disc image
         env:
           DISC_URL: ${{ secrets.DISC_URL }}
@@ -43,10 +52,26 @@ jobs:
           gdown "https://drive.google.com/uc?id=${FILE_ID}" -O "$RUNNER_TEMP/disc.iso"
           ls -lh "$RUNNER_TEMP/disc.iso"
 
+      # Makes the repo's own files look old so the build doesn't think
+      # everything changed and recompile what it already finished.
+      - name: Mark repo files as old
+        run: git ls-files -z | xargs -0 touch -t 202601010000
+
       - name: Build IPA
+        id: build
+        timeout-minutes: 325
         run: |
           scripts/builder/build.sh "$RUNNER_TEMP/disc.iso" \
             --ipa build/BlueWake.ipa --no-train
+
+      - name: Save build progress
+        if: ${{ always() && steps.build.outcome != 'success' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build
+            ref
+          key: ww-build-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Encrypt IPA
         env:
