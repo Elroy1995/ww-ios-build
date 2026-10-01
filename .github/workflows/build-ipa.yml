@@ -73,15 +73,9 @@ jobs:
             ref
           key: ww-build-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: Encrypt IPA
-        env:
-          IPA_PASSPHRASE: ${{ secrets.IPA_PASSPHRASE }}
-        run: |
-          7z a -p"$IPA_PASSPHRASE" -mhe=on build/BlueWake-encrypted.7z build/BlueWake.ipa
-
-      - name: Upload encrypted IPA
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: BlueWake-encrypted
-          path: build/BlueWake-encrypted.7z
+          name: BlueWake
+          path: build/BlueWake.ipa
           retention-days: 1
